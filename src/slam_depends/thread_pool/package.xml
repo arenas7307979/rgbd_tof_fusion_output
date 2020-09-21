@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>thread_pool</name>
+  <version>0.0.0</version>
+  <description>The thread_pool package</description>
+  <maintainer email="yirenliu0909@gmail.com">Yi-Ren Liu</maintainer>
+  <license>TODO</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+</package>

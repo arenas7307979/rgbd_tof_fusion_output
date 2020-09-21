@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>camodocal</name>
+  <version>0.0.0</version>
+  <description>The camodocal package</description>
+  <maintainer email="carl_liu@todo.todo">carl_liu</maintainer>
+  <license>TODO</license>
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+</package>
