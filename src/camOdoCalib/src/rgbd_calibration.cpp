@@ -1,4 +1,5 @@
 #include "rgbd_calibration.h"
+
 //Note!!!
 //校正板參數在calcCamPose.cpp修改
 //Calibration board parameters are modified in calcCamPose.cpp.
@@ -14,10 +15,6 @@ RGBD_CALIBRATION::RGBD_CALIBRATION(CameraPtr depth_cam_, CameraPtr rgb_cam_, Sop
 //Calibration board parameters are modified in calcCamPose.cpp.
 void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<PCLCloud3>, double>> &rgb_depth_time)
 {
-    
-    std::map<double, RGBFramePtr> rgb_frame_vec;
-    std::map<double, std::shared_ptr<PCLCloud3>> depth_frame_vec;
-    std::vector<bool> bad_idx;
     //step1. convert to calibration board image to pose Tcw / uv / x3Dc
     for (int i = 0; i < rgb_depth_time.size(); i++)
     {
@@ -27,13 +24,23 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         std::vector<cv::Point2f> uv_2d_distorted;
         std::vector<int> id_landmark;
         bool isCalOk = calcCamPoseRGBD(std::get<2>(rgb_depth_time[i]), std::get<0>(rgb_depth_time[i]), model_rgb_cam, Twc, x3Dw, uv_2d_distorted, id_landmark);
-        if(isCalOk == false){
+
+        int center_count = 0; //4 represent find center (20, 21, 14, 15)
+        for (int k = 0; k < id_landmark.size(); k++)
+        {
+            if (id_landmark[k] == 20 || id_landmark[k] == 14 || id_landmark[k] == 15 || id_landmark[k] == 21)
+                center_count++;
+        }
+
+        if (isCalOk == false || center_count != 4)
+        {
+            //not find 4 block of checkboard center or estimate pose failure
+            //center of x3Dc(0.794, 0.794)
             bad_idx.push_back(i);
             continue;
         }
 
         //check id has 
-
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
         cur_rgb_info->uv_distorted = uv_2d_distorted;
         cur_rgb_info->x3Dw = x3Dw;
@@ -50,17 +57,39 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         cur_rgb_info->Twc.translation() = twc;
         cur_rgb_info->Twc.setQuaternion(qwc);
         rgb_frame_vec[cur_rgb_info->timestamp] = (cur_rgb_info);
-        depth_frame_vec[cur_rgb_info->timestamp] = std::get<1>(rgb_depth_time[i]);
+        pcl_frame_vec[cur_rgb_info->timestamp] = std::get<1>(rgb_depth_time[i]);
+        close_to_far.push_back(std::pair<double, double>(twc.norm(), cur_rgb_info->timestamp));
     }
-    
-    std::cout << "rgb_frame_vec size:" << rgb_frame_vec.size() <<std::endl;
-    std::cout << "depth_frame_vec size:" << depth_frame_vec.size() <<std::endl;
-    //step2
+    std::sort(close_to_far.begin(), close_to_far.end(), OrderByDistance());
 
+    //step2.
+    //("Estimating undistortion map...");
+    EstimateLocalModel();
+    std::cout << "rgb_frame_vec size:" << rgb_frame_vec.size() <<std::endl;
+    std::cout << "pcl_frame_vec size:" << pcl_frame_vec.size() <<std::endl;
+    //step2 undistort pcl
 }
 
 //("Estimating undistortion map...");
-void RGBD_CALIBRATION::EstimateLocalModel(std::map<double, RGBFramePtr>& rgb_frame_vec, std::map<double, std::shared_ptr<PCLCloud3>>& depth_frame_vec){
+void RGBD_CALIBRATION::EstimateLocalModel()
+{
+    std::cout << "close_to_far.size() size:" << close_to_far.size() <<std::endl;
+    Eigen::Vector3d chessboard_center(0.794, 0.794, 0.794); //x3Dcolor
+    for (size_t i = 0; i < close_to_far.size(); i++)
+    {
+        //close to far
+        double timestamp = close_to_far[i].second;
+
+        //project rgb_cam center to depth cam ( Tdepth_ro_color * x3Dcolor )
+        Eigen::Vector3d proj_center_chess_to_depthCam = Tdepth_rgb * chessboard_center;
+
+        // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
+        calibration::PlaneInfo plane_info;
+        // if (extractPlane(gt_cb, und_cloud, und_color_cb_center, plane_info))
+        // {
+        // }
+    }
+    
+
 
 }
-
