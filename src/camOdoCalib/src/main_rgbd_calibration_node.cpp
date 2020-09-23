@@ -23,7 +23,6 @@
 #include <sensor_msgs/image_encodings.h>
 #include <cv_bridge/cv_bridge.h>
 
-
 #include "rgbd_calibration.h"
 
 
@@ -97,6 +96,7 @@ public:
     //校正板參數在calcCamPose.cpp修改
     //Calibration board parameters are modified in calcCamPose.cpp.
     rgbd_calibr = std::make_shared<RGBD_CALIBRATION>(camera_depth, camera_rgb, Tdepth_rgb);
+
   }
   ~RGBDCalibrationNode() {}
 
@@ -174,7 +174,6 @@ public:
 
     while (1)
     {
-
       std::chrono::milliseconds dura(4000);
       std::this_thread::sleep_for(dura);
 
@@ -219,6 +218,9 @@ public:
   };
 
 private:
+  //threading init
+   std::unique_ptr<ThreadPool> threading_pool_opt;
+
   CameraPtr camera_rgb, camera_depth;
   Sophus::SE3d Tdepth_rgb;
   RGBD_CALIBRATIONPtr rgbd_calibr;

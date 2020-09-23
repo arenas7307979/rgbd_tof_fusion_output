@@ -5,12 +5,12 @@ void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
                       std::vector<cv::Point2f> &p2ds, 
                       std::vector<int>& id_landmark)
 {
-  const int col = 9;
-  const int row = 6;
+  const int col = 6;
+  const int row = 5;
   if (CHESS == pt)
   {
     // std::cout << "CHESSBOARD\n";
-    const float square_size = 0.575; // unit:  m
+    const float square_size = 0.12; // unit:  m
     cv::Size pattern_size(col, row);
     std::vector<cv::Point2f> corners;
     if (cv::findChessboardCorners(img_raw, pattern_size, corners))

@@ -27,15 +27,19 @@
 //calibration and plane lib
 #include "globals.h"
 #include "calibration_common/algorithms/plane_extraction.h"
+#include "calibration_common/base/pcl_conversion.h"
 
 //pcl
+// #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl_conversions/pcl_conversions.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/registration/icp.h>
 #include <pcl/common/io.h>
 #include <sensor_msgs/PointCloud2.h>
+
+#include "ThreadPool.h"
+
 
 // PCL
 typedef pcl::PointCloud<pcl::PointXYZ>  PCLCloud3;       ///< 3D pcl PointCloud.
@@ -48,6 +52,18 @@ class RGBD_CALIBRATION
 {
 
 public:
+
+    template <typename T>
+    boost::shared_ptr<T> make_shared_ptr(std::shared_ptr<T> &ptr)
+    {
+        return boost::shared_ptr<T>(ptr.get(), [ptr](T *) mutable { ptr.reset(); });
+    }
+
+    template <typename T>
+    std::shared_ptr<T> make_shared_ptr(boost::shared_ptr<T> &ptr)
+    {
+        return std::shared_ptr<T>(ptr.get(), [ptr](T *) mutable { ptr.reset(); });
+    }
 
     //far to close, according to distance norm of twc
     struct OrderByDistance
@@ -90,9 +106,17 @@ public:
     //校正板參數在calcCamPose.cpp修改
     //Calibration board parameters are modified in calcCamPose.cpp.
     void Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<PCLCloud3>, double>>& rgb_depth_time);
-    void EstimateLocalModel();
-private:
     
+private:
+    void EstimateLocalModel();
+    bool ExtractPlane(CameraPtr color_cam_model,
+                    const PCLCloud3::ConstPtr & cloud,
+                      const Eigen::Vector3d &center,
+                      calibration::PlaneInfo &plane_info);
+
+    //thread pool
+    std::unique_ptr<ThreadPool> threading_pool_opt;
+
     std::map<double, RGBFramePtr> rgb_frame_vec;
     std::map<double, std::shared_ptr<PCLCloud3>> pcl_frame_vec;
     std::map<double, std::shared_ptr<DEPTHFrame>> depth_frame_vec;
@@ -104,8 +128,10 @@ private:
     Sophus::SE3d Tdepth_rgb;
 
     //local fitting parameter for calibr depth  (depth image size is used as the depth for each pixel)
-    std::shared_ptr<calibration::LocalModel> local_model_; //size [Wdepth * Hdepth]
-    std::shared_ptr<calibration::LocalMatrixFitPCL> local_fit_;
+    boost::shared_ptr<calibration::LocalModel> local_model_; //size [Wdepth * Hdepth]
+    boost::shared_ptr<calibration::LocalMatrixFitPCL> local_fit_;
+    calibration::Polynomial<double, 2> depth_error_function_;
+    std::map<double, calibration::PlaneInfo> plane_info_map_; //timestamp / planeinfo
 };
     using RGBD_CALIBRATIONPtr = std::shared_ptr<RGBD_CALIBRATION>;
     using RGBD_CALIBRATIONConstPtr = std::shared_ptr<const RGBD_CALIBRATION>;
