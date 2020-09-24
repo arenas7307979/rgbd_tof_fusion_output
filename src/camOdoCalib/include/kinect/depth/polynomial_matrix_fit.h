@@ -592,6 +592,9 @@ template <typename PolynomialT_, typename ScalarT_, typename PCLPointT_>
       if (not pcl::isFinite(point))
         return;
 
+      // LookupTableData content:
+          // Size2 index_;
+          // Scalar weight_;
       const std::vector<typename ModelT::LookupTableData> & lt_data = Base::model()->lookupTable(x_index, y_index);
 //      Size2 index = Base::model()->matrixIndex(x_index, y_index);
 //      Base::accumulation_bins_.at(index) += typename Types<Scalar>::Point3(point.x, point.y, point.z);

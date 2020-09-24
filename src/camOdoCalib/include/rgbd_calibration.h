@@ -127,11 +127,26 @@ private:
     CameraPtr model_rgb_cam;
     Sophus::SE3d Tdepth_rgb;
 
+
+    calibration::LocalMatrixPCL::Ptr local_matrix_;
+    calibration::GlobalMatrixPCL::Ptr global_matrix_;
+    
     //local fitting parameter for calibr depth  (depth image size is used as the depth for each pixel)
     boost::shared_ptr<calibration::LocalModel> local_model_; //size [Wdepth * Hdepth]
     boost::shared_ptr<calibration::LocalMatrixFitPCL> local_fit_;
+
+    calibration::GlobalModel::Ptr global_model_;
+    calibration::GlobalMatrixFitPCL::Ptr global_fit_;
+
+    calibration::InverseGlobalModel::Ptr inverse_global_model_;
+    calibration::InverseGlobalMatrixFitEigen::Ptr inverse_global_fit_;
+
     calibration::Polynomial<double, 2> depth_error_function_;
+
     std::map<double, calibration::PlaneInfo> plane_info_map_; //timestamp / planeinfo
+
+
+
 };
     using RGBD_CALIBRATIONPtr = std::shared_ptr<RGBD_CALIBRATION>;
     using RGBD_CALIBRATIONConstPtr = std::shared_ptr<const RGBD_CALIBRATION>;

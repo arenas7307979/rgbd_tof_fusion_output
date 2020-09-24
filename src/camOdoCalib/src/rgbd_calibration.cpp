@@ -10,21 +10,36 @@ RGBD_CALIBRATION::RGBD_CALIBRATION(CameraPtr depth_cam_, CameraPtr rgb_cam_, Sop
     model_rgb_cam = rgb_cam_;
     Tdepth_rgb = init_Tdepth_rgb;
 
-    std::cout << "RGBD_CALIBRATION 1" << std::endl;
     calibration::Size2 images_size_depth, undistortion_matrix_cell_size_;
-    std::cout << "RGBD_CALIBRATION 2" << std::endl;
     images_size_depth.x() = depth_cam_->imageWidth();
     images_size_depth.y() = depth_cam_->imageHeight();
-    std::cout << "RGBD_CALIBRATION 3" << std::endl;
     undistortion_matrix_cell_size_.x() = 2;
     undistortion_matrix_cell_size_.y() = 2;
 
+    depth_error_function_ = calibration::Polynomial<double, 2>(Eigen::Vector3d(1, 0, 0));
+
+    //TODO:: introduce
     local_model_ = boost::make_shared<calibration::LocalModel>(images_size_depth);
     calibration::LocalModel::Data::Ptr local_matrix = local_model_->createMatrix(undistortion_matrix_cell_size_, calibration::LocalPolynomial::IdentityCoefficients());
-    std::cout << "RGBD_CALIBRATION 4" << std::endl;
     local_model_->setMatrix(local_matrix);
-    std::cout << "RGBD_CALIBRATION 5" << std::endl;
+    local_matrix_ = boost::make_shared<calibration::LocalMatrixPCL>(local_model_);
+
+    //TODO:: introduce
+    global_model_ = boost::make_shared<calibration::GlobalModel>(images_size_depth);
+    calibration::GlobalModel::Data::Ptr global_data = boost::make_shared<calibration::GlobalModel::Data>(calibration::Size2(2, 2), calibration::GlobalPolynomial::IdentityCoefficients());
+    global_model_->setMatrix(global_data);
+    global_matrix_ = boost::make_shared<calibration::GlobalMatrixPCL>(global_model_);
+
+    //TODO:: introduce
     local_fit_ = boost::make_shared<calibration::LocalMatrixFitPCL>(local_model_);
+    local_fit_ ->setDepthErrorFunction(depth_error_function_);
+    
+    global_fit_ = boost::make_shared<calibration::GlobalMatrixFitPCL>(global_model_);
+    global_fit_->setDepthErrorFunction(depth_error_function_);
+    calibration::InverseGlobalModel::Data::Ptr matrix = boost::make_shared<calibration::InverseGlobalModel::Data>( calibration::Size2(1, 1), calibration::InverseGlobalPolynomial::IdentityCoefficients() );
+    inverse_global_model_ = boost::make_shared<calibration::InverseGlobalModel>(global_model_->imageSize());
+    inverse_global_model_->setMatrix(matrix);
+    inverse_global_fit_ = boost::make_shared<calibration::InverseGlobalMatrixFitEigen>(inverse_global_model_);
 }
 
 //Note!!!
@@ -99,7 +114,7 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         pcl_frame_vec[cur_rgb_info->timestamp] = std::get<1>(rgb_depth_time[i]);
         close_to_far.push_back(std::pair<double, double>(twc.norm(), cur_rgb_info->timestamp));
         obs_count++;
-        if (obs_count > 20)
+        if (obs_count > 30)
             break;
     }
     //Sorting by
@@ -115,11 +130,10 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
 //("Estimating undistortion map...");
 void RGBD_CALIBRATION::EstimateLocalModel()
 {
-    int max_threads_ = 2;
-    Eigen::Vector3d chessboard_center(0.794, 0.794, 0.794); //x3Dcolor
-
-    //project rgb_cam center to depth cam ( Tdepth_ro_color * x3Dcolor )
-    Eigen::Vector3d proj_center_chess_to_depthCam = Tdepth_rgb * chessboard_center;
+    int max_threads_ = 4;
+    Eigen::Vector3d chessboard_center(0.794, 0.794, 0.794); //x3Dw_color
+    bool global_update = false;
+    bool local_update = false;
 
     for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
     {
@@ -133,12 +147,36 @@ void RGBD_CALIBRATION::EstimateLocalModel()
             //close to far
             double timestamp = close_to_far[i + th].second;
 
+            //project rgb_cam center to depth cam ( Tdepth_ro_color * Tcw * x3Dw_color )
+            Eigen::Vector3d proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_center;
+
             // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
             calibration::PlaneInfo plane_info;
-            boost::shared_ptr<const pcl::PointCloud<pcl::PointXYZ>> cloud;
-            cloud = make_shared_ptr(pcl_frame_vec[timestamp]);
+            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
+            und_cloud = make_shared_ptr(pcl_frame_vec[timestamp]);
 
-            if (ExtractPlane(model_rgb_cam, cloud, proj_center_chess_to_depthCam, plane_info))
+#pragma omp critical
+            if (global_update)
+            {
+                calibration::Point3 und_color_cb_center_tmp;
+                und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
+                und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
+                und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
+                calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
+                inverse_global.undistort(0, 0, und_color_cb_center_tmp);
+                proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
+                proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
+                proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
+            }
+
+#pragma omp critical
+            if (local_update)
+            {
+                calibration::LocalMatrixPCL local(local_fit_->model());
+                local.undistort(*und_cloud);
+            }
+
+            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
                 plane_info_map_[timestamp] = plane_info;
                 std::cout << "plane_info indices=" << plane_info.indices_->size() << std::endl;
@@ -153,20 +191,32 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                     if ((r - h / 2) * (r - h / 2) + (c - w / 2) * (c - w / 2) < (h / 2) * (h / 2))
                         indices.push_back((*plane_info.indices_)[j]);
                 }
-                calibration::Plane fitted_plane = calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*cloud, indices));
+                calibration::Plane fitted_plane = calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp], indices));
                 plane_info_map_[timestamp].plane_ = fitted_plane;
-
-                #pragma omp critical
+#pragma omp critical
                 {
-                // local_fit_->accumulateCloud(cloud, *plane_info.indices_);
-                // local_fit_->addAccumulatedPoints(fitted_plane);
-                // for (Size1 c = 0; c < gt_cb.corners().elements(); ++c)
-                // {
-                //     const Point3 &corner = gt_cb.corners()[c];
-                //     inverse_global_fit_->addPoint(0, 0, corner, fitted_plane);
-                // }
-                // if (i + th > 20)
-                //     inverse_global_fit_->update();
+                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp], *plane_info.indices_);
+                    local_fit_->addAccumulatedPoints(fitted_plane);
+
+                    //Due to Td_c extrinsic parameters error, not every points from calibration board projected onto 
+                    //depth camera coordinates is not on the pcl fitting plane, 
+                    //so we create a polynomial to correct this problem 
+                    //next time to correct the color camera center when it projected to depth camera coordinat 
+                    //inverse_global_fit_ is second order az^2 + bz+ c.
+                    for (int k = 0; k < rgb_frame_vec[timestamp]->x3Dw.size(); k++)
+                    {
+                        auto &point_Xw = rgb_frame_vec[timestamp]->x3Dw[k];
+                        Eigen::Vector3d Xw(point_Xw.x, point_Xw.y, point_Xw.z);
+                        Eigen::Vector3d obs_proj_check_to_depth = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * Xw;
+                        const calibration::Point3 &corner = calibration::Point3(obs_proj_check_to_depth.x(),
+                                                                                obs_proj_check_to_depth.y(),
+                                                                                obs_proj_check_to_depth.z());
+                        inverse_global_fit_->addPoint(0, 0, corner, fitted_plane);
+                    }
+                    if (i + th > 20){
+                        inverse_global_fit_->update();
+                        // std::cout << "inverse_global_fit_ params:"<< inverse_global_fit_->
+                    }
                 }
             }
         }
@@ -187,17 +237,22 @@ bool RGBD_CALIBRATION::ExtractPlane(CameraPtr color_cam_model,
     plane_extractor.setRadius(radius);
     bool plane_extracted = false;
 
+#if 0
     int r[] = {0, 1, 2};         // TODO Add parameter
     int k[] = {0, 1, -1, 2, -2}; // TODO Add parameter
-    for (int i = 0; i < 5 && !plane_extracted; ++i)
+    for (int i = 0; i < 5 ; ++i)
     {
-        for (int j = 0; j < 3 && !plane_extracted; ++j)
+        for (int j = 0; j < 3 ; ++j)
         {
             plane_extractor.setRadius((1 + r[j]) * radius);
             plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z() + (1 + r[j]) * radius * k[i]));
             plane_extracted = plane_extractor.extract(plane_info);
         }
     }
+#else
+    plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z()));
+    plane_extracted = plane_extractor.extract(plane_info);
+#endif
 
     return plane_extracted;
 }
