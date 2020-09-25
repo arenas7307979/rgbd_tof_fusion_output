@@ -1,5 +1,10 @@
 #include "calcCamPose.h"
 
+//watching!!
+//當校正板改變參數 記得EstimateLocalModel的checkboard_cols and checkboard_rows要跟著一起改
+
+//When the calibration parameter changes 
+//remember that the EstimateLocalModel() checkboard_cols and checkboard_rows are needed to change
 void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
                       std::vector<cv::Point3f> &p3ds,
                       std::vector<cv::Point2f> &p2ds, 
@@ -10,7 +15,7 @@ void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
   if (CHESS == pt)
   {
     // std::cout << "CHESSBOARD\n";
-    const float square_size = 0.12; // unit:  m
+    const float square_size = 0.108; // unit:  m
     cv::Size pattern_size(col, row);
     std::vector<cv::Point2f> corners;
     if (cv::findChessboardCorners(img_raw, pattern_size, corners))
@@ -264,7 +269,7 @@ bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
   std::vector<cv::Point3f> p3ds;
   std::vector<cv::Point2f> p2ds;
   // FindTargetCorner(img_raw, CHESS, p3ds, p2ds);
-  FindTargetCorner(img_raw, APRIL, p3ds, p2ds, id_landmark);
+  FindTargetCorner(img_raw, CHESS, p3ds, p2ds, id_landmark);
   x3Dw = p3ds;
   uv_2d_distorted = p2ds;
   std::vector<double> p = cam->getK();

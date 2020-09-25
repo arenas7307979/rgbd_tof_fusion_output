@@ -167,12 +167,9 @@ template <typename PolynomialT_>
     virtual void update();
 
   protected:
-
     Matrix<DataBin> data_bins_;
     Matrix<AccumulationBin> accumulation_bins_;
-
     typename ModelT::Ptr model_;
-
   };
 
 template <typename PolynomialT_, typename ScalarT_>
@@ -580,6 +577,7 @@ template <typename PolynomialT_, typename ScalarT_, typename PCLPointT_>
                                         const std::vector<int> & indices)
     {
       assert(cloud.isOrganized());
+      std::cout << "indices.size()=" << indices.size() <<std::endl;
       for (Size1 i = 0; i < indices.size(); ++i)
         accumulatePoint(indices[i] % cloud.width, indices[i] / cloud.width, cloud.points[indices[i]]);
     }

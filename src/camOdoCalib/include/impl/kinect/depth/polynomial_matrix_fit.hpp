@@ -60,7 +60,6 @@ template <typename PolynomialT_>
   void PolynomialMatrixSimpleModelFit_<PolynomialT_>::update()
   {
     assert(model());
-
 #pragma omp parallel for
     for (Size1 y_index = 0; y_index < data_bins_.size().y(); ++y_index)
     {
@@ -69,7 +68,7 @@ template <typename PolynomialT_>
         const DataBin & distorsion_bin = data_bins_(x_index, y_index);
         const Size1 bin_size = distorsion_bin.size();
 
-        if (bin_size < 5 * Degree)
+        if (bin_size < 5 * Degree) //Degree = 2
           continue;
 
         ceres::Problem problem;
@@ -155,7 +154,7 @@ template <typename PolynomialT_>
     }
   }
 
-template <typename PolynomialT_>
+  template <typename PolynomialT_>
   void PolynomialMatrixSmoothModelFit_<PolynomialT_>::update()
   {
     assert(model());
@@ -165,20 +164,18 @@ template <typename PolynomialT_>
     {
       for (Size1 x_index = 0; x_index < data_bins_.size().x(); ++x_index)
       {
-        const DataBin & data_bin = data_bins_(x_index, y_index);
+        const DataBin &data_bin = data_bins_(x_index, y_index);
         const Size1 bin_size = data_bin.size();
-
         if (bin_size < 5 * Degree)
+        {
           continue;
-
+        }
 
         ceres::Problem problem;
-
         for (Size1 i = 0; i < bin_size; ++i)
         {
-          const Data & data = data_bin[i];
-
-          WeightedPolynomialResidual<PolynomialT> * residual = new WeightedPolynomialResidual<PolynomialT>(data.x_, data.y_, data.weight_);
+          const Data &data = data_bin[i];
+          WeightedPolynomialResidual<PolynomialT> *residual = new WeightedPolynomialResidual<PolynomialT>(data.x_, data.y_, data.weight_);
           problem.AddResidualBlock(new ceres::AutoDiffCostFunction<WeightedPolynomialResidual<PolynomialT>, 1, Size>(residual),
                                    NULL,
                                    model()->polynomial(x_index, y_index).data());
@@ -190,7 +187,6 @@ template <typename PolynomialT_>
 
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-
       }
     }
   }

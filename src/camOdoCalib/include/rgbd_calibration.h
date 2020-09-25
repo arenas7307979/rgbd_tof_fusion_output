@@ -2,6 +2,9 @@
 #define RGBD_CALIBRATION_H
 #endif
 
+
+#define DEBUG 0
+
 #include <stdio.h>
 #include <mutex>
 #include <opencv2/opencv.hpp>

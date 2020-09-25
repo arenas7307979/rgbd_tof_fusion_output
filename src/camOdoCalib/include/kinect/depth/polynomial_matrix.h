@@ -222,28 +222,30 @@ template <typename ModelT_, typename ScalarT_, typename PCLPointT_>
       point.z *= k;
     }
 
-    virtual void undistort(Cloud & cloud) const
+    virtual void undistort(Cloud &cloud) const
     {
       assert(Base::model());
-
       for (Size1 i = 0; i < cloud.width; ++i)
       {
         for (Size1 j = 0; j < cloud.height; ++j)
         {
-          if (not pcl::isFinite(cloud(i, j))/* or std::abs(cloud(i, j).z) < 0.01*/)
+          //TODO:: watching!! (cloud(i, j).z) < 0.01
+          if (not pcl::isFinite(cloud(i, j)) || (cloud(i, j).z) < 0.01) /* or std::abs(cloud(i, j).z) < 0.01*/
             continue;
-
+            
           Scalar z = Scalar(cloud(i, j).z);
+          // std::cout << "undis3 i= " << i << " j= " << j << " z=" << z << std::endl;
           Base::model()->undistort(i, j, z);
+          // std::cout << "undis4 static_cast<float>(z)=" << static_cast<float>(z) << std::endl;
+          // std::cout << "cloud(i, j).z=" << cloud(i, j).z << std::endl;
           float k = static_cast<float>(z) / cloud(i, j).z;
-
+          // std::cout << "undis5" << std::endl;
           cloud(i, j).x *= k;
           cloud(i, j).y *= k;
           cloud(i, j).z *= k;
         }
       }
     }
-
   };
 
 } /* namespace calibration */
