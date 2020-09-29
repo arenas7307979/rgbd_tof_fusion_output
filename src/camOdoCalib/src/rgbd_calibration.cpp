@@ -50,6 +50,9 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
 {
     int obs_count = 0;
     Sophus::SE3d Twc_last;
+    calibration::PointPlaneExtraction<calibration::PCLPoint3>::Ptr plane_extractor =
+        boost::make_shared<calibration::PointPlaneExtraction<calibration::PCLPoint3>>();
+
     //step1. convert to calibration board image to pose Tcw / uv / x3Dc
     for (int i = 0; i < rgb_depth_time.size(); i++)
     {
@@ -89,27 +92,71 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
             }
         }
 
+
         //check id has
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
         cur_rgb_info->uv_distorted = uv_2d_distorted;
         cur_rgb_info->x3Dw = x3Dw;
         cur_rgb_info->id_landmark = id_landmark; // 1 landmark_id is consists of 4 uv_point; 22 id_landmark : 88 uv_distorted point
-
-        //std::cout << "cur_rgb_info->id_landmark size=" << cur_rgb_info->id_landmark.size() << std::endl;
-        //std::cout << "cur_rgb_info->x3Dw size=" << cur_rgb_info->x3Dw.size() << std::endl;
-        //std::cout << "cur_rgb_info->uv_distorted size=" << cur_rgb_info->uv_distorted.size() << std::endl;
-        //exit(-1);
-
         cur_rgb_info->Twc.translation() = twc;
         cur_rgb_info->Twc.setQuaternion(qwc);
+        boost::shared_ptr<PCLCloud3> pcl_current = make_shared_ptr(std::get<1>(rgb_depth_time[i]));
+        calibration::Pose plane_pose;
+        DepthFramePtr cur_depth_info = std::make_shared<DepthFrame>();
+#if 0
+        //extract inital plane of chessboard and project to coordinate of depth cam
+        {
+            calibration::PlaneInfo plane_info_cb;
+            plane_extractor->setInputCloud(pcl_current);
+            plane_extractor->setRadius(std::min(model_rgb_cam->imageWidth(), model_rgb_cam->imageHeight()) / 1.5);
+
+            Eigen::Vector3d chessboard_ori_to_depthcam(cur_rgb_info->x3Dw[0].x,
+                                                       cur_rgb_info->x3Dw[0].y,
+                                                       cur_rgb_info->x3Dw[0].z);
+            Eigen::Vector3d chessboard_ori_mid_to_depthcam(cur_rgb_info->x3Dw.back().x,
+                                                           cur_rgb_info->x3Dw.back().y,
+                                                           cur_rgb_info->x3Dw.back().z);
+
+            chessboard_ori_to_depthcam = Tdepth_rgb * cur_rgb_info->Twc.inverse() * chessboard_ori_to_depthcam;
+            chessboard_ori_mid_to_depthcam = Tdepth_rgb * cur_rgb_info->Twc.inverse() * chessboard_ori_mid_to_depthcam;
+            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_to_depthcam + chessboard_ori_mid_to_depthcam) / 2;
+
+            // calibration::Point3 center(proj_center_chess_to_depthCam.x(),
+            //                            proj_center_chess_to_depthCam.y(),
+            //                            proj_center_chess_to_depthCam.z());
+            calibration::PCLPoint3 p;
+            p.x = proj_center_chess_to_depthCam.x();
+            p.y = proj_center_chess_to_depthCam.y();
+            p.z = proj_center_chess_to_depthCam.z();
+            plane_extractor->setPoint(p);
+
+            bool cb_plane = plane_extractor->extract(plane_info_cb);
+            if (!cb_plane)
+            {
+                bad_idx.push_back(i);
+                continue;
+            }
+
+            calibration::PCLCloud3::Ptr cur_cloud = make_shared_ptr(std::get<1>(rgb_depth_time[i]));
+            // plane_info_cb.plane_ = 
+            // calibration::PlaneFit<double>::robustFit(calibration::PCLConversion<double>::toPointMatrix(cur_cloud, plane_info_cb.indices_), plane_info_cb.std_dev_);
+            // plane_pose = calibration::Util::plane3dTransform(calibration::Plane(calibration::Vector3::UnitZ(), 0), plane_info_cb.plane_ );
+            // cur_depth_info->checkboard_plane_ = plane_info_cb;
+            // cur_depth_info->pose_check_board = plane_pose;
+            // cur_depth_info->cloud_ = pcl_current;
+            //plane_info_map_[timestamp].plane_ = fitted_plane;
+        }
+#endif
+
         rgb_frame_vec[cur_rgb_info->timestamp] = (cur_rgb_info);
-        pcl_frame_vec[cur_rgb_info->timestamp] = std::get<1>(rgb_depth_time[i]);
+        pcl_frame_vec[cur_rgb_info->timestamp]->cloud_ = make_shared_ptr(std::get<1>(rgb_depth_time[i]));
         close_to_far.push_back(std::pair<double, double>(twc.norm(), cur_rgb_info->timestamp));
         obs_count++;
-        
+
         if (obs_count > 30)
             break;
     }
+
     //Sorting by
     std::cout << "close_to_far size:" << close_to_far.size() <<std::endl;
     std::sort(close_to_far.begin(), close_to_far.end(), OrderByDistance());
@@ -118,16 +165,178 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
     // ("Estimating undistortion map...");
     EstimateLocalModel();
 
+    //step3.
+    // ("Recomputing undistortion map..."); according local_fit and inverse_global_fit to undistort center and pcl for new input
+    EstimateLocalModelReverse();
+
+    //step4. ("Estimating global error correction map...");
+    EstimateGlobalModel();
+
     exit(-1);
+}
+
+void RGBD_CALIBRATION::EstimateGlobalModel()
+{
+
+#if 0
+#pragma omp parallel for
+    for (size_t i = 0; i < data_vec_.size(); ++i)
+    {
+        DepthData &data = *data_vec_[i];
+        const Checkerboard &gt_cb = *data.checkerboard_;
+        const PCLCloud3 &cloud = *data.cloud_;
+
+        Point3 und_color_cb_center = gt_cb.center();
+        InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
+        inverse_global.undistort(0, 0, und_color_cb_center);
+
+        //  RGBD_INFO(data.id_, " - Transformed z: " << gt_cb.center().z() << " -> " << und_color_cb_center.z());
+        PCLCloud3::Ptr und_cloud = boost::make_shared<PCLCloud3>(cloud);
+        LocalMatrixPCL local(local_fit_->model());
+        local.undistort(*und_cloud);
+
+        PlaneInfo plane_info;
+        if (extractPlane(gt_cb, und_cloud, und_color_cb_center, plane_info))
+        {
+            data.estimated_plane_ = plane_info;
+            data.undistorted_cloud_ = und_cloud;
+            data.plane_extracted_ = true;
+
+#pragma omp critical
+            {
+                Indices reduced = *plane_info.indices_;
+                std::random_shuffle(reduced.begin(), reduced.end());
+                //reduced.resize(reduced.size() / 5);
+                global_fit_->accumulateCloud(*und_cloud, reduced);
+                global_fit_->addAccumulatedPoints(gt_cb.plane());
+            }
+        }
+        else
+            RGBD_WARN(data.id_, "Plane not extracted!!");
+    }
+    global_fit_->update();
+#endif
+
+}
+
+void RGBD_CALIBRATION::EstimateLocalModelReverse(){
+
+  //only reset obs, retain calibration matrix
+  local_fit_->reset();
+
+   int max_threads_ = 5;
+    int checkboard_cols = 6;
+    int checkboard_rows = 5;
+    bool global_update = true;
+    bool local_update = true;
+    int w = model_depth_cam->imageWidth();
+    int h = model_depth_cam->imageHeight();
+    std::cout << "EstimateLocalModel" << std::endl;
+    for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
+    {
+#pragma omp parallel for schedule(static, 1)
+        for (int th = 0; th < max_threads_; ++th)
+        {
+            if (i + th >= close_to_far.size())
+                continue;
+
+            //close to far
+            double timestamp = close_to_far[i + th].second;
+
+            Eigen::Vector3d chessboard_ori_to_depthcam(rgb_frame_vec[timestamp]->x3Dw[0].x,
+                                                       rgb_frame_vec[timestamp]->x3Dw[0].y,
+                                                       rgb_frame_vec[timestamp]->x3Dw[0].z);
+            Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().y,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().z);
+
+            chessboard_ori_to_depthcam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
+            chessboard_ori_mid_to_depthcam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_mid_to_depthcam;
+            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_to_depthcam + chessboard_ori_mid_to_depthcam) / 2;
+            
+            // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
+            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
+            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
+
+//correct center x3Ddepth from checkboard project to depth cam
+#pragma omp critical
+            if (global_update)
+            {
+                calibration::Point3 und_color_cb_center_tmp;
+                und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
+                und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
+                und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
+                
+                calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
+                inverse_global.undistort(0, 0, und_color_cb_center_tmp);
+                proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
+                proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
+                proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
+            }
+
+//correct pcl undistoration
+#pragma omp critical
+            if (local_update)
+            {
+                calibration::LocalMatrixPCL local(local_fit_->model());
+                local.undistort(*und_cloud);
+            }
+
+            calibration::PlaneInfo plane_info;
+            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
+            {
+                std::cout << "plane_info indices=" << plane_info.indices_->size() << std::endl;
+
+                //indices info from current extraction plane of inliers --> plane_info
+                //indices only for current fitted_plane
+                boost::shared_ptr<std::vector<int>> indices = boost::make_shared<std::vector<int>>(); // = *plane_info.indices_;
+                indices->reserve(plane_info.indices_->size());
+                for (size_t j = 0; j < plane_info.indices_->size(); ++j)
+                {
+                    int r = (*plane_info.indices_)[j] / w;
+                    int c = (*plane_info.indices_)[j] % w;
+                    if ((r - h / 2) * (r - h / 2) + (c - w / 2) * (c - w / 2) < (h / 2) * (h / 2))
+                        indices->push_back((*plane_info.indices_)[j]);
+                }
+
+                //fitted_plane and plane_info are different
+                calibration::Plane fitted_plane = 
+                calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, *indices));
+
+                //old_indices infor from idx of inliner for EstimateLocalModelPlane result(old)
+                boost::shared_ptr<std::vector<int>> old_indices;
+#pragma omp critical
+                {
+                    old_indices = plane_info_map_[timestamp].indices_;
+                }
+                indices->clear();
+                //std::set_union, input [old_indices, plane_info.indices_]  output *indices
+                std::set_union(old_indices->begin(), old_indices->end(), plane_info.indices_->begin(), plane_info.indices_->end(), 
+                std::back_inserter(*indices));
+
+#pragma omp critical
+                {
+                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *indices);
+                    local_fit_->addAccumulatedPoints(fitted_plane);
+                    plane_info_map_[timestamp].indices_ = indices;
+                }
+            }
+        }
+        //There is a table of the same size as the image in local_fit_
+        //and each coordinate in the table corresponds to a polynomial(second order) for correction function
+        std::cout << "===local_fit_ opt start===" <<std::endl;
+        local_fit_->update();
+    }
 }
 
 //("Estimating undistortion map...");
 void RGBD_CALIBRATION::EstimateLocalModel()
 {
     int max_threads_ = 5;
-
     int checkboard_cols = 6;
     int checkboard_rows = 5;
+    int w = model_depth_cam->imageWidth();
+    int h = model_depth_cam->imageHeight();
     bool global_update = false;
     bool local_update = false;
     std::cout << "EstimateLocalModel" << std::endl;
@@ -154,9 +363,8 @@ void RGBD_CALIBRATION::EstimateLocalModel()
             Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_to_depthcam + chessboard_ori_mid_to_depthcam) / 2;
             
             // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
-            calibration::PlaneInfo plane_info;
             boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
-            und_cloud = make_shared_ptr(pcl_frame_vec[timestamp]);
+            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
 
 //correct center x3Ddepth from checkboard project to depth cam
 #pragma omp critical
@@ -181,9 +389,8 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 calibration::LocalMatrixPCL local(local_fit_->model());
                 local.undistort(*und_cloud);
             }
-            int w = model_depth_cam->imageWidth();
-            int h = model_depth_cam->imageHeight();
 
+            calibration::PlaneInfo plane_info;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             // if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
@@ -200,7 +407,8 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 }
 
                 //fitted_plane and plane_info are different
-                calibration::Plane fitted_plane = calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp], indices));
+                calibration::Plane fitted_plane = 
+                calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, indices));
                 plane_info_map_[timestamp].plane_ = fitted_plane;
 //plane params
 #if DEBUG
@@ -227,7 +435,7 @@ void RGBD_CALIBRATION::EstimateLocalModel()
 
 #pragma omp critical
                 {
-                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp], *plane_info.indices_);
+                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *plane_info.indices_);
                     local_fit_->addAccumulatedPoints(fitted_plane);
 
                     //Due to Td_c extrinsic parameters error, not every points from calibration board projected onto 

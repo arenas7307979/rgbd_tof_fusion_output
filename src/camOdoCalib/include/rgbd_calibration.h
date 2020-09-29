@@ -31,6 +31,7 @@
 #include "globals.h"
 #include "calibration_common/algorithms/plane_extraction.h"
 #include "calibration_common/base/pcl_conversion.h"
+#include "calibration_common/objects/planar_object.h"
 
 //pcl
 // #include <pcl_conversions/pcl_conversions.h>
@@ -92,14 +93,22 @@ public:
     using RGBFramePtr = std::shared_ptr<RGBFrame>;
     using RGBFrameConstPtr = std::shared_ptr<const RGBFrame>;
 
-    struct DEPTHFrame
+    struct DepthFrame
     {
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-        DEPTHFrame();
-        virtual ~DEPTHFrame(){}
+        DepthFrame(){};
+        virtual ~DepthFrame() {}
+        int id_;
+        calibration::PCLCloud3::Ptr cloud_;
+        calibration::PCLCloud3::Ptr undistorted_cloud_;
+        calibration::PlaneInfo estimated_plane_;
+        calibration::PlaneInfo checkboard_plane_;
+        calibration::Pose pose_check_board;
+        bool plane_extracted_;
     };
-    using DEPTHFramePtr = std::shared_ptr<DEPTHFrame>;
-    using DEPTHFrameConstPtr = std::shared_ptr<const DEPTHFrame>;
+    using DepthFramePtr = std::shared_ptr<DepthFrame>;
+    using DepthFrameConstPtr = std::shared_ptr<const DepthFrame>;
+
     //Note!!!
     //校正板參數在calcCamPose.cpp修改
     //Calibration board parameters are modified in calcCamPose.cpp.
@@ -111,7 +120,9 @@ public:
     void Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<PCLCloud3>, double>>& rgb_depth_time);
     
 private:
+    void EstimateGlobalModel();
     void EstimateLocalModel();
+    void EstimateLocalModelReverse();
     bool ExtractPlane(CameraPtr color_cam_model,
                     const PCLCloud3::ConstPtr & cloud,
                       const Eigen::Vector3d &center,
@@ -121,8 +132,8 @@ private:
     std::unique_ptr<ThreadPool> threading_pool_opt;
 
     std::map<double, RGBFramePtr> rgb_frame_vec;
-    std::map<double, std::shared_ptr<PCLCloud3>> pcl_frame_vec;
-    std::map<double, std::shared_ptr<DEPTHFrame>> depth_frame_vec;
+    std::map<double, DepthFramePtr> pcl_frame_vec;
+    // std::map<double, std::shared_ptr<DepthFrame>> depth_frame_vec;
     std::vector<bool> bad_idx;
     std::vector<std::pair<double, double>> close_to_far; //twc.norm, time 
     //cam model
