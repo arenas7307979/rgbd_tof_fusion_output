@@ -4,7 +4,7 @@
 
 <!-- initial extrinsic param Tdepth_rgb, pose from rgb cam to depth cam -->
 <param name="/Tdepth_rgb/tx" value="0.0" type="double"/>
-<param name="/Tdepth_rgb/ty" value="0.15" type="double"/>
+<param name="/Tdepth_rgb/ty" value="0.8" type="double"/>
 <param name="/Tdepth_rgb/tz" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qx" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qy" value="0.0" type="double"/>

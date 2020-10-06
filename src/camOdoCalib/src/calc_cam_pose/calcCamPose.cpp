@@ -1,21 +1,22 @@
 #include "calcCamPose.h"
-
+namespace rgbd_calibration
+{
 //watching!!
 //當校正板改變參數 記得EstimateLocalModel的checkboard_cols and checkboard_rows要跟著一起改
 
-//When the calibration parameter changes 
+//When the calibration parameter changes
 //remember that the EstimateLocalModel() checkboard_cols and checkboard_rows are needed to change
 void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
                       std::vector<cv::Point3f> &p3ds,
-                      std::vector<cv::Point2f> &p2ds, 
-                      std::vector<int>& id_landmark)
+                      std::vector<cv::Point2f> &p2ds,
+                      std::vector<int> &id_landmark)
 {
-  const int col = 6;
-  const int row = 5;
+  // const int col = 6;
+  // const int row = 5;
   if (CHESS == pt)
   {
     // std::cout << "CHESSBOARD\n";
-    const float square_size = 0.108; // unit:  m
+    // const float square_size = 0.108; // unit:  m
     cv::Size pattern_size(col, row);
     std::vector<cv::Point2f> corners;
     if (cv::findChessboardCorners(img_raw, pattern_size, corners))
@@ -164,7 +165,7 @@ void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
 bool EstimatePose(const std::vector<cv::Point3f> &p3ds,
                   const std::vector<cv::Point2f> &p2ds, const double &fx,
                   const double &cx, const double &fy, const double &cy,
-                  Eigen::Matrix4d &Twc, cv::Mat &img_raw,const CameraPtr &cam)
+                  Eigen::Matrix4d &Twc, cv::Mat &img_raw, const CameraPtr &cam)
 {
   if (p3ds.size() != p2ds.size() || p3ds.size() < 4)
   {
@@ -197,12 +198,12 @@ bool EstimatePose(const std::vector<cv::Point3f> &p3ds,
     cam->spaceToPlane(axis[i], imgpts[i]);
   }
   // cv::projectPoints(axis, cv_r, cv_t, K, dist, imgpts);
-  cv::line(img_raw, cv::Point2f(imgpts[0](0), imgpts[0](1)), cv::Point2f(imgpts[1](0), imgpts[1](1)), cv::Scalar(255, 0, 0), 2);//BGR
+  cv::line(img_raw, cv::Point2f(imgpts[0](0), imgpts[0](1)), cv::Point2f(imgpts[1](0), imgpts[1](1)), cv::Scalar(255, 0, 0), 2); //BGR
   cv::line(img_raw, cv::Point2f(imgpts[0](0), imgpts[0](1)), cv::Point2f(imgpts[2](0), imgpts[2](1)), cv::Scalar(0, 255, 0), 2);
   cv::line(img_raw, cv::Point2f(imgpts[0](0), imgpts[0](1)), cv::Point2f(imgpts[3](0), imgpts[3](1)), cv::Scalar(0, 0, 255), 2);
-  cv::putText(img_raw, "X", cv::Point2f(imgpts[1](0), imgpts[1](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5,cv::Scalar(255, 0, 0));
-  cv::putText(img_raw, "Y", cv::Point2f(imgpts[2](0), imgpts[2](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5,cv::Scalar(0, 255, 0));
-  cv::putText(img_raw, "Z", cv::Point2f(imgpts[3](0), imgpts[3](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5,cv::Scalar(0, 0, 255));
+  cv::putText(img_raw, "X", cv::Point2f(imgpts[1](0), imgpts[1](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0));
+  cv::putText(img_raw, "Y", cv::Point2f(imgpts[2](0), imgpts[2](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+  cv::putText(img_raw, "Z", cv::Point2f(imgpts[3](0), imgpts[3](1)), CV_FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255));
 
   cv::putText(
       img_raw, "t_wc: (m) " + std::to_string(Twc(0, 3)) + " " + std::to_string(Twc(1, 3)) + " " + std::to_string(Twc(2, 3)),
@@ -225,7 +226,7 @@ bool calcCamPose(const double &timestamps, const cv::Mat &image,
   // FindTargetCorner(img_raw, CHESS, p3ds, p2ds);
   std::vector<int> id_landmark;
   FindTargetCorner(img_raw, APRIL, p3ds, p2ds, id_landmark);
-  std::cout << "p3ds.size()=" << p3ds.size() <<std::endl;
+  std::cout << "p3ds.size()=" << p3ds.size() << std::endl;
   for (int kk = 0; kk < p3ds.size(); kk++)
   {
     std::cout << "p2ds size: " << p2ds[kk] << std::endl;
@@ -244,10 +245,10 @@ bool calcCamPose(const double &timestamps, const cv::Mat &image,
     // std::cout << "un_pts: " << un_pts[i] << std::endl;
   }
 
-  if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw,cam))
+  if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw, cam))
   {
-     cv::imshow("apriltag_detection & camPose_calculation", img_raw);
-     cv::waitKey(1);
+    cv::imshow("apriltag_detection & camPose_calculation", img_raw);
+    cv::waitKey(1);
     return true;
   }
   else
@@ -257,8 +258,8 @@ bool calcCamPose(const double &timestamps, const cv::Mat &image,
 }
 
 bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
-                     const CameraPtr &cam, Eigen::Matrix4d &Twc, std::vector<cv::Point3f>& x3Dw,
-                     std::vector<cv::Point2f>& uv_2d_distorted, std::vector<int>& id_landmark)
+                     const CameraPtr &cam, Eigen::Matrix4d &Twc, std::vector<cv::Point3f> &x3Dw,
+                     std::vector<cv::Point2f> &uv_2d_distorted, std::vector<int> &id_landmark)
 {
   cv::Mat img_raw = image.clone();
   if (img_raw.channels() == 3)
@@ -285,10 +286,10 @@ bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
     // std::cout << "un_pts: " << un_pts[i] << std::endl;
   }
 
-  if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw,cam))
+  if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw, cam))
   {
-     cv::imshow("apriltag_detection & camPose_calculation", img_raw);
-     cv::waitKey(1);
+    cv::imshow("apriltag_detection & camPose_calculation", img_raw);
+    cv::waitKey(1);
     return true;
   }
   else
@@ -296,3 +297,4 @@ bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
     return false;
   }
 }
+} // namespace

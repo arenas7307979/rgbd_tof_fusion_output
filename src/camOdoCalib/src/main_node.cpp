@@ -132,7 +132,7 @@ void calc_process(const CameraPtr &cam)
           std::cout.width(5);
           std::cout << leftImg;
 
-          bool isCalOk = calcCamPose(time, image, cam, Twc);
+          bool isCalOk = rgbd_calibration::calcCamPose(time, image, cam, Twc);
 
           std::cout << "\b\b\b\b\b";
           if(!isCalOk)//zdf

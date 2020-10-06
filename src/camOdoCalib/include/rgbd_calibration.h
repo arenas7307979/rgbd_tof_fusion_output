@@ -30,6 +30,8 @@
 //calibration and plane lib
 #include "globals.h"
 #include "calibration_common/algorithms/plane_extraction.h"
+#include "calibration_common/algorithms/plane_to_plane_calibration.h"
+#include "calibration_common/algorithms/point_on_plane_calibration.h"
 #include "calibration_common/base/pcl_conversion.h"
 #include "calibration_common/objects/planar_object.h"
 
@@ -102,9 +104,9 @@ public:
         calibration::PCLCloud3::Ptr cloud_;
         calibration::PCLCloud3::Ptr undistorted_cloud_;
         calibration::PlaneInfo estimated_plane_;
-        calibration::PlaneInfo checkboard_plane_;
+        calibration::Plane checkboard_plane_;
         calibration::Pose pose_check_board;
-        bool plane_extracted_;
+        bool plane_extracted_ = false;
     };
     using DepthFramePtr = std::shared_ptr<DepthFrame>;
     using DepthFrameConstPtr = std::shared_ptr<const DepthFrame>;
@@ -123,10 +125,13 @@ private:
     void EstimateGlobalModel();
     void EstimateLocalModel();
     void EstimateLocalModelReverse();
+    void EstimateTransform();
     bool ExtractPlane(CameraPtr color_cam_model,
-                    const PCLCloud3::ConstPtr & cloud,
+                      const PCLCloud3::ConstPtr &cloud,
                       const Eigen::Vector3d &center,
                       calibration::PlaneInfo &plane_info);
+    void OptimizeAll();
+    int max_threads_ = 5;
 
     //thread pool
     std::unique_ptr<ThreadPool> threading_pool_opt;

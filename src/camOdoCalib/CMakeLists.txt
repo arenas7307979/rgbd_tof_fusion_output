@@ -95,6 +95,8 @@ add_library(calib_lib
     src/solver.cpp
     src/utils.cpp
     src/solveQyx.cpp
+    src/calibration_common/algorithms/plane_to_plane_calibration.cpp
+    src/calibration_common/algorithms/point_on_plane_calibration.cpp
  )
 
 target_link_libraries(calc_lib ${catkin_LIBRARIES} ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
