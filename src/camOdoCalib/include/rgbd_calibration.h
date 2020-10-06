@@ -16,27 +16,23 @@
 
 //eigen
 #include "Eigen/Dense"
-
 #include <fstream>
-#include <Eigen/Dense>
 #include "sophus/se3.hpp"
-#include <opencv2/opencv.hpp>
 
 //camera model
-#include "../src/camera_models/include/Camera.h"
-#include "../src/camera_models/include/CameraFactory.h"
 #include "../src/calc_cam_pose/calcCamPose.h"
 
+
 //calibration and plane lib
-#include "globals.h"
-#include "calibration_common/algorithms/plane_extraction.h"
-#include "calibration_common/algorithms/plane_to_plane_calibration.h"
-#include "calibration_common/algorithms/point_on_plane_calibration.h"
-#include "calibration_common/base/pcl_conversion.h"
-#include "calibration_common/objects/planar_object.h"
+#include "non_linear_edge.h"
+// #include "globals.h"
+// #include "calibration_common/algorithms/plane_extraction.h"
+// #include "calibration_common/algorithms/plane_to_plane_calibration.h"
+// #include "calibration_common/algorithms/point_on_plane_calibration.h"
+// #include "calibration_common/base/pcl_conversion.h"
+// #include "calibration_common/objects/planar_object.h"
 
 //pcl
-// #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
@@ -45,7 +41,6 @@
 #include <sensor_msgs/PointCloud2.h>
 
 #include "ThreadPool.h"
-
 
 // PCL
 typedef pcl::PointCloud<pcl::PointXYZ>  PCLCloud3;       ///< 3D pcl PointCloud.
@@ -125,13 +120,13 @@ private:
     void EstimateGlobalModel();
     void EstimateLocalModel();
     void EstimateLocalModelReverse();
-    void EstimateTransform();
+    int EstimateTransform();
     bool ExtractPlane(CameraPtr color_cam_model,
                       const PCLCloud3::ConstPtr &cloud,
                       const Eigen::Vector3d &center,
                       calibration::PlaneInfo &plane_info);
-    void OptimizeAll();
-    int max_threads_ = 5;
+    void OptimizeAll(int obs_num);
+    int max_threads_ = 4;
 
     //thread pool
     std::unique_ptr<ThreadPool> threading_pool_opt;

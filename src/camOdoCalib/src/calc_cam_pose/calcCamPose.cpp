@@ -39,15 +39,15 @@ void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
           }
         }
       }
-      else
-      {
-        std::cout << "Chessboard config is not correct with image\n";
-      }
+      // else
+      // {
+      //   std::cout << "Chessboard config is not correct with image\n";
+      // }
     }
-    else
-    {
-      std::cout << "No chessboard detected in image\n";
-    }
+    // else
+    // {
+    //   std::cout << "No chessboard detected in image\n";
+    // }
   }
   else if (APRIL == pt)
   {
@@ -288,8 +288,11 @@ bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
 
   if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw, cam))
   {
+#if 0 
+/*Display Chessboard UI*/
     cv::imshow("apriltag_detection & camPose_calculation", img_raw);
     cv::waitKey(1);
+#endif
     return true;
   }
   else

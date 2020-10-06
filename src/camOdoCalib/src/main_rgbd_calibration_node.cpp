@@ -117,7 +117,7 @@ public:
     else if(img_msg->encoding == sensor_msgs::image_encodings::MONO8 || img_msg->encoding == sensor_msgs::image_encodings::TYPE_8UC1)
     {
       //gray image
-      cv::Mat mono_img = cv_bridge::toCvShare(img_msg, "mono")->image;
+      cv::Mat mono_img = cv_bridge::toCvShare(img_msg, "mono")->image.clone();
     }
     else
     {
@@ -137,16 +137,17 @@ public:
     }
     cv_ptr->image.copyTo(depth_img);
     std::shared_ptr<PCLCloud3> cloud = std::make_shared<PCLCloud3>(camera_depth->imageWidth(), camera_depth->imageHeight());
-
+    int pcl_num = 0;
     //convert depth img to pcl type
     for (int j = 0; j < camera_depth->imageHeight(); ++j)
     {
       for (int k = 0; k < camera_depth->imageWidth(); ++k)
       {
-
         float depth = depth_img.at<uint16_t>(j, k) * 0.001; //(y,x) convert to meter
         if (depth < 0.05)
           depth = 0;
+        else
+          pcl_num++;
 
         Eigen::Vector3d Pc;
         camera_depth->liftProjective(Eigen::Vector2d(k, j), Pc);
@@ -158,6 +159,11 @@ public:
       }
     }
 
+    if (pcl_num < 50)
+    {
+      m_buf.unlock();
+      return;
+    }
     // std::cout << cloud->points.size() <<std::endl;
     // std::cout << cloud->points.size() <<std::endl;
 
@@ -235,9 +241,9 @@ int main(int argc, char **argv)
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
   RGBDCalibrationNode rgbd_node(n);
-  message_filters::Subscriber<sensor_msgs::Image> sub_img(n, "/camera/color/image_raw", 10), sub_depth_img(n, "/camera/aligned_depth_to_color/image_raw", 10);
+  message_filters::Subscriber<sensor_msgs::Image> sub_img(n, "/camera/color/image_raw", 100), sub_depth_img(n, "/camera/aligned_depth_to_color/image_raw", 100);
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
-  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(100), sub_img, sub_depth_img);
+  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(1000), sub_img, sub_depth_img);
   sync.registerCallback(boost::bind(&RGBDCalibrationNode::ImageDepthImgCallback, &rgbd_node, _1, _2));
 
   //the following three rows are to run the calibrating project through playing bag package

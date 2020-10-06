@@ -1,3 +1,8 @@
+RGB AND Detph Calibration
+Input:
+	RGB(gray) image
+	Depth PCL (X_depthcam / Y_depthcam / Z_depthcam)
+-----------------------------------------------
 1. catkin build
 2. change sensor(rgb and depth) parameter in 
    docker_slam/datasets/CamOdomCalibraTool/src/camOdoCalib/config
