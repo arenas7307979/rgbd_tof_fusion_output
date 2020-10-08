@@ -84,6 +84,7 @@ public:
         double timestamp;
         std::vector<cv::Point3f> x3Dw;
         Sophus::SE3d Twc;
+        Sophus::SE3d Tcw;
         std::vector<cv::Point2f> uv_distorted;
         std::vector<int> id_landmark;
     };

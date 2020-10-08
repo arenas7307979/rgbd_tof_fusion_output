@@ -1,4 +1,4 @@
-#include "../include/PinholeCamera.h"
+#include "camera_models/PinholeCamera.h"
 
 #include <cmath>
 #include <cstdio>
@@ -347,6 +347,76 @@ void PinholeCamera::liftSphere(const Eigen::Vector2d &p,
   liftProjective(p, P);
 
   P.normalize();
+}
+
+/**
+ * \brief Lifts a point from the normal of image plane to its projective ray
+ *
+ * \param p image coordinates
+ * \param P coordinates of the projective ray
+ */
+void PinholeCamera::normalliftProjective(const Eigen::Vector2d &p,
+                                         Eigen::Vector3d &P) const
+{
+    double mx_d, my_d, mx2_d, mxy_d, my2_d, mx_u, my_u;
+  double rho2_d, rho4_d, radDist_d, Dx_d, Dy_d, inv_denom_d;
+  // double lambda;
+
+  // Lift points to normalised plane
+  mx_d = p(0);
+  my_d = p(1);
+
+  if (m_noDistortion)
+  {
+    mx_u = mx_d;
+    my_u = my_d;
+  }
+  else
+  {
+    if (0)
+    {
+      double k1 = mParameters.k1();
+      double k2 = mParameters.k2();
+      double p1 = mParameters.p1();
+      double p2 = mParameters.p2();
+
+      // Apply inverse distortion model
+      // proposed by Heikkila
+      mx2_d = mx_d * mx_d;
+      my2_d = my_d * my_d;
+      mxy_d = mx_d * my_d;
+      rho2_d = mx2_d + my2_d;
+      rho4_d = rho2_d * rho2_d;
+      radDist_d = k1 * rho2_d + k2 * rho4_d;
+      Dx_d = mx_d * radDist_d + p2 * (rho2_d + 2 * mx2_d) + 2 * p1 * mxy_d;
+      Dy_d = my_d * radDist_d + p1 * (rho2_d + 2 * my2_d) + 2 * p2 * mxy_d;
+      inv_denom_d = 1 / (1 + 4 * k1 * rho2_d + 6 * k2 * rho4_d + 8 * p1 * my_d +
+                         8 * p2 * mx_d);
+
+      mx_u = mx_d - inv_denom_d * Dx_d;
+      my_u = my_d - inv_denom_d * Dy_d;
+    }
+    else
+    {
+      // Recursive distortion model
+      int n = 8;
+      Eigen::Vector2d d_u;
+      distortion(Eigen::Vector2d(mx_d, my_d), d_u);
+      // Approximate value
+      mx_u = mx_d - d_u(0);
+      my_u = my_d - d_u(1);
+
+      for (int i = 1; i < n; ++i)
+      {
+        distortion(Eigen::Vector2d(mx_u, my_u), d_u);
+        mx_u = mx_d - d_u(0);
+        my_u = my_d - d_u(1);
+      }
+    }
+  }
+
+  // Obtain a projective ray
+  P << mx_u, my_u, 1.0;
 }
 
 /**

@@ -1,5 +1,6 @@
-#include "../include/PinholeFullCamera.h"
+#include "camera_models/PinholeFullCamera.h"
 
+#include <iostream>
 #include <cmath>
 #include <cstdio>
 #include <eigen3/Eigen/Dense>
@@ -478,6 +479,19 @@ void PinholeFullCamera::liftProjective(const Eigen::Vector2d &p,
   }
 
   P << x, y, 1.0;
+}
+
+
+/**
+ * \brief Lifts a point from the normal of image plane to its projective ray
+ *
+ * \param p image coordinates
+ * \param P coordinates of the projective ray
+ */
+void PinholeFullCamera::normalliftProjective(const Eigen::Vector2d &p,
+                                      Eigen::Vector3d &P) const
+{
+  std::cout << "TODO PinholeFullCamera::normalliftProjective" << std::endl;
 }
 
 void PinholeFullCamera::liftProjective(const Eigen::Vector2d &p,

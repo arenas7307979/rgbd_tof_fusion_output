@@ -4,7 +4,7 @@
 #include <boost/shared_ptr.hpp>
 #include <opencv2/core/core.hpp>
 
-#include "Camera.h"
+#include "camera_models/Camera.h"
 
 class CameraFactory
 {

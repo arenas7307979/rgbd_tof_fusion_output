@@ -47,17 +47,16 @@ template <typename DerivedT_>
   {
     typedef typename Eigen::DenseBase<DerivedT_>::Scalar Scalar;
     typedef typename Eigen::NumTraits<Scalar>::Real Real;
-
-    if (Eigen::numext::abs2(x) <= Real(1))
+    if (Eigen::numext::abs2(x) <= Real(1)){
       return Eigen::poly_eval_horner(polynomial, x);
+    }
     else
     {
       Scalar val = polynomial[0];
       Scalar inv_x = Scalar(1) / x;
       for (Eigen::DenseIndex i = 1; i < polynomial.size(); ++i)
         val = val * inv_x + polynomial[i];
-
-      return Eigen::numext::pow(x, Scalar(polynomial.size() - 1)) * val;
+      return Eigen::numext::pow(x, Scalar(polynomial.size() - 1)) * val; 
     }
   }
 

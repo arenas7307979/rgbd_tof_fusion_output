@@ -2,7 +2,7 @@
 #include <iostream>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
-#include "../camera_models/include/Camera.h"
+#include "camera_models/Camera.h"
 #include "ethz_apriltag/Tag36h11.h"
 #include "ethz_apriltag/TagDetector.h"
 namespace rgbd_calibration

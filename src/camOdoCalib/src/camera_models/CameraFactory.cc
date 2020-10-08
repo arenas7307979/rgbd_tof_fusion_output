@@ -1,12 +1,13 @@
-#include "../include/CameraFactory.h"
+#include "camera_models/Camera.h"
+#include "camera_models/CameraFactory.h"
 
 #include <boost/algorithm/string.hpp>
 
-#include "../include/CataCamera.h"
-#include "../include/EquidistantCamera.h"
-#include "../include/PinholeCamera.h"
-#include "../include/PinholeFullCamera.h"
-#include "../include/ScaramuzzaCamera.h"
+#include "camera_models/CataCamera.h"
+#include "camera_models/EquidistantCamera.h"
+#include "camera_models/PinholeCamera.h"
+#include "camera_models/PinholeFullCamera.h"
+#include "camera_models/ScaramuzzaCamera.h"
 
 #include "ceres/ceres.h"
 

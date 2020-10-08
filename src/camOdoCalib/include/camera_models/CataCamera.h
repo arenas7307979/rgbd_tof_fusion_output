@@ -4,7 +4,7 @@
 #include <opencv2/core/core.hpp>
 #include <string>
 
-#include "Camera.h"
+#include "camera_models/Camera.h"
 #include "ceres/rotation.h"
 
 /**
@@ -84,6 +84,12 @@ public:
       const cv::Size &boardSize,
       const std::vector<std::vector<cv::Point3f>> &objectPoints,
       const std::vector<std::vector<cv::Point2f>> &imagePoints);
+
+
+
+  // Lift points from the normal of (K^-1) image plane to the projective space
+  void normalliftProjective(const Eigen::Vector2d &p,
+                            Eigen::Vector3d &P) const;
 
   // Lift points from the image plane to the sphere
   void liftSphere(const Eigen::Vector2d &p, Eigen::Vector3d &P) const;

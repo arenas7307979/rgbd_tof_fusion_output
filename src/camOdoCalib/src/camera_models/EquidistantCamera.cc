@@ -1,5 +1,5 @@
-#include "../include/EquidistantCamera.h"
-#include "../include/Utils.h"
+#include "camera_models/EquidistantCamera.h"
+#include "camera_models/Utils.h"
 
 #include <cmath>
 #include <cstdio>
@@ -331,6 +331,28 @@ void EquidistantCamera::liftSphere(const Eigen::Vector2d &p,
                                    Eigen::Vector3d &P) const
 {
   liftProjective(p, P);
+}
+
+/**
+ * \brief Lifts a point from the normal of image plane to its projective ray
+ *
+ * \param p image coordinates
+ * \param P coordinates of the projective ray
+ */
+void EquidistantCamera::normalliftProjective(const Eigen::Vector2d &p,
+                                             Eigen::Vector3d &P) const
+{
+  // Lift points to normalised plane
+  Eigen::Vector2d p_u;
+  p_u << p(0), p(1);
+
+  // Obtain a projective ray
+  double theta, phi;
+  backprojectSymmetric(p_u, theta, phi);
+
+  P(0) = sin(theta) * cos(phi);
+  P(1) = sin(theta) * sin(phi);
+  P(2) = cos(theta);
 }
 
 /**

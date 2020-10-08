@@ -11,7 +11,7 @@
 <param name="/Tdepth_rgb/qz" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qw" value="1.0" type="double"/>
 
-<node pkg="cam_calibration" type="rgbd_calibration_node" name="rgbd_calibration" output="screen" >
+<node pkg="cam_calibration" type="rgbd_calibration_node" name="rgbd_calibration" output="screen" launch-prefix="gdb -ex run --args " >
     <remap from="/cam0/image_raw" to="/camera/color/image_raw"/>
     <remap from="/camera/depth/image_raw" to="/camera/aligned_depth_to_color/image_raw"/>
     <remap from="/imu0" to="/camera/imu"/>

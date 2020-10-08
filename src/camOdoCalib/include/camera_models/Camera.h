@@ -75,6 +75,10 @@ public:
     // Lift points from the image plane to the projective space
     virtual void liftProjective(const Eigen::Vector2d &p,
                                 Eigen::Vector3d &P) const = 0;
+
+    // Lift points from the normal of (K^-1) image plane to the projective space
+    virtual void normalliftProjective(const Eigen::Vector2d &p,
+                                      Eigen::Vector3d &P) const = 0;
     //%output P
 
     // Projects 3D points to the image plane (Pi function)

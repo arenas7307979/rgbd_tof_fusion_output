@@ -3,8 +3,8 @@
 #include <Eigen/Dense>
 
 //camera model
-#include "../src/camera_models/include/Camera.h"
-#include "../src/camera_models/include/CameraFactory.h"
+#include "camera_models/Camera.h"
+#include "camera_models/CameraFactory.h"
 
 
 //calibration_common
@@ -116,7 +116,14 @@ public:
         images_size_(images_size)
   {
     chessboard_corner_colrow = calibration::Size2(corner_cols_, corner_rows_);
-    // Do nothing
+    chessboard_Xw = calibration::Cloud3(chessboard_corner_colrow);
+
+    for (int i = 0; i < chessboard_Xw.elements(); i++)
+    {
+      chessboard_Xw[i][0] = Xw_vec_[i].x;
+      chessboard_Xw[i][1] = Xw_vec_[i].y;
+      chessboard_Xw[i][2] = Xw_vec_[i].z;
+    }
   }
 
   template <typename T>
@@ -126,7 +133,7 @@ public:
     typename calibration::Types<T>::Translation3 translation(t[0], t[1], t[2]);
     return translation * rotation;
   }
-
+  
   template <typename T>
   bool operator()(const T *const color_sensor_pose_q,
                   const T *const color_sensor_pose_t,
@@ -138,7 +145,6 @@ public:
   {
     typename calibration::Types<T>::Pose color_sensor_pose_eigen = toEigen<T>(color_sensor_pose_q, color_sensor_pose_t);
     typename calibration::Types<T>::Pose checkerboard_pose_eigen = toEigen<T>(checkerboard_pose_q, checkerboard_pose_t);
-
     const int DEGREE = calibration::MathTraits<calibration::GlobalPolynomial>::Degree;
     const int MIN_DEGREE = calibration::MathTraits<calibration::GlobalPolynomial>::MinDegree;
     const int SIZE = calibration::MathTraits<calibration::GlobalPolynomial>::Size; //DEGREE - MIN_DEGREE + 1;
@@ -177,26 +183,28 @@ public:
 
     Eigen::Matrix<T, Eigen::Dynamic, 1> x = A.colPivHouseholderQr().solve(b);
 
-    GlobalModel::Data::Ptr global_data = boost::make_shared<calibration::GlobalModel::Data>(Size2(2, 2));
+    calibration::GlobalModel::Data::Ptr global_data = boost::make_shared<calibration::GlobalModel::Data>(calibration::Size2(2, 2));
     for (int i = 0; i < 3 * calibration::MathTraits<calibration::GlobalPolynomial>::Size; ++i)
       global_data->container().data()[0 * calibration::MathTraits<calibration::GlobalPolynomial>::Size + i] = global_undistortion[i];
     for (int i = 0; i < SIZE; ++i)
       global_data->container().data()[3 * calibration::MathTraits<calibration::GlobalPolynomial>::Size + i] = x[i];
 
-    GlobalModel::Ptr global_model = boost::make_shared<calibration::GlobalModel>(images_size_);
+    std::cout << "OPT 444" << std::endl;
+
+    calibration::GlobalModel::Ptr global_model = boost::make_shared<calibration::GlobalModel>(images_size_);
     global_model->setMatrix(global_data);
+    std::cout << "OPT 555" <<std::endl;
 
     calibration::GlobalMatrixEigen global(global_model);
+    std::cout << "OPT 666" <<std::endl;
 
     typename calibration::Types<T>::Cloud3 depth_points(depth_points_.size());
     depth_points.container() = depth_points_.container().cast<T>();
     std::vector<double> depth_cam_K_para =  depth_cam_model->getK();
     cv::Matx33d K;
-    for (size_t k = 0; k < depth_cam_K_para.size(); k++)
-    {
-      K << depth_cam_K_para[i];
-    }
-    std::cout << "K=" << K << std::endl;
+    K << depth_cam_K_para[0], 0, depth_cam_K_para[2],
+        0, depth_cam_K_para[1], depth_cam_K_para[3],
+        0, 0, 1;
 
     for (int j = 0; j < depth_points.size().y(); ++j)
     {
@@ -204,45 +212,69 @@ public:
       {
         T z = depth_points(i, j).z();
         typename calibration::Types<T>::Point2 normalized_pixel((i - (K(0, 2) + delta[2])) / (K(0, 0) * delta[0]),
-                                                   (j - (K(1, 2) + delta[3])) / (K(1, 1) * delta[1]));
-        Eigen::Vector3d                                                   
-        depth_points(i, j) = z * depth_camera_model_->undistort2d_<T>(normalized_pixel).homogeneous();
-        /*T z = depth_points(i, j).z();
-          depth_points(i, j).x() = (i - (depth_camera_model_->cx() + depth_camera_model_->Tx() + delta[2])) * depth_points(i, j).z() / (depth_camera_model_->fx() * delta[0]);
-          depth_points(i, j).y() = (j - (depth_camera_model_->cy() + depth_camera_model_->Ty() + delta[3])) * depth_points(i, j).z() / (depth_camera_model_->fy() * delta[1]);*/
+                                                                (j - (K(1, 2) + delta[3])) / (K(1, 1) * delta[1]));
+        Eigen::Vector2d tmp_normalized_pixel(normalized_pixel[0], normalized_pixel[1]);
+        Eigen::Vector3d Xc;
+        depth_cam_model->normalliftProjective(tmp_normalized_pixel, Xc);
+        Xc = Xc * z;
+        depth_points(i, j).x() = Xc.x();
+        depth_points(i, j).y() = Xc.y();
       }
     }
-
+    std::cout << "OPT 888" <<std::endl;
+    
     global.undistort(depth_points);
 
+    std::cout << "OPT 999" <<std::endl;
+    
     typename calibration::Types<T>::Cloud3 cb_corners(chessboard_corner_colrow);
-    cb_corners.container() = color_sensor_pose_eigen * checkerboard_pose_eigen * checkerboard_->corners().container().cast<T>();
 
-    Polynomial<T, 2> depth_error_function(depth_error_function_.coefficients().cast<T>());
+    cb_corners.container() = color_sensor_pose_eigen * checkerboard_pose_eigen * chessboard_Xw.container().cast<T>();
+    
+    std::cout << "OPT 1010" <<std::endl;
+    
+    calibration::Polynomial<T, 2> depth_error_function(depth_error_function_.coefficients().cast<T>());
     typename calibration::Types<T>::Plane cb_plane = calibration::Types<T>::Plane::Through(cb_corners(0, 0), cb_corners(0, 1), cb_corners(1, 0));
 
-    Eigen::Map<Eigen::Matrix<T, 3, Eigen::Dynamic>> residual_map_dist(residuals, 3, plane_indices_.size());
+    std::cout << "plane_indices_.size()=" << plane_indices_.size() << std::endl;
+
+    Eigen::Map<Eigen::Matrix<T, 3, Eigen::Dynamic>> residual_map_dist(residuals, 3, plane_indices_.size()); //3 row n col
+
     for (calibration::Size1 i = 0; i < plane_indices_.size(); ++i)
     {
-      Line line(Point3::Zero(), depth_points[plane_indices_[i]].normalized());
-      residual_map_dist.col(i) = (line.intersectionPoint(cb_plane) - depth_points[plane_indices_[i]]) /
-                                 (std::sqrt(T(plane_indices_.size())) * 
-                                 ceres::poly_eval(depth_error_function.coefficients(), depth_points[plane_indices_[i]].z()));
+      if (depth_points[plane_indices_[i]].z() > 0)
+      {
+        calibration::Line line(calibration::Point3::Zero(), depth_points[plane_indices_[i]].normalized());
+        // std::cout << " depth_points[plane_indices_[i]].normalized() =" << depth_points[plane_indices_[i]].normalized() << std::endl;
+        // std::cout << "line.intersectionPoint(cb_plane)=" << line.intersectionPoint(cb_plane) << std::endl;
+        // std::cout << "epth_points[plane_indices_[i]])=" << depth_points[plane_indices_[i]] << std::endl;
+        // std::cout << "depth input =" << depth_points[plane_indices_[i]].z() << std::endl;
+        // std::cout << "depth ouput=" << ceres::poly_eval(depth_error_function.coefficients(), depth_points[plane_indices_[i]].z()) << std::endl;
+#if 1
+        residual_map_dist.col(i) = (line.intersectionPoint(cb_plane) - depth_points[plane_indices_[i]]) /
+                                   (std::sqrt(T(plane_indices_.size())) *
+                                    ceres::poly_eval(depth_error_function.coefficients(),
+                                                     depth_points[plane_indices_[i]].z()));
+#else
+        double poly_depth = ceres::poly_eval(depth_error_function.coefficients(), depth_points[plane_indices_[i]].z());
+        residual_map_dist.col(i) = (line.intersectionPoint(cb_plane) - depth_points[plane_indices_[i]]) / (10000 * poly_depth);
+#endif
+      }
+      else
+      {
+        residual_map_dist.col(i)[0] = 0;
+        residual_map_dist.col(i)[1] = 0;
+        residual_map_dist.col(i)[2] = 0;
+      }
     }
-
-    //      Scalar alpha = std::acos(depth_plane.normal().dot(cb_plane.normal()));
-    //      if (alpha > M_PI_2)
-    //        alpha = M_PI - alpha;
-    //      residual_map_dist *= std::exp(alpha);
-
     return true;
   }
-#if 0
-#endif
+
 
 private:
   CameraPtr depth_cam_model;
   std::vector<cv::Point3f> Xw_vec;
+  calibration::Cloud3 chessboard_Xw;
   const calibration::Cloud3 depth_points_;
   const calibration::Indices plane_indices_;
   calibration::Size2 chessboard_corner_colrow;

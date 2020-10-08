@@ -4,9 +4,8 @@ project(cam_calibration)
 # set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 set(CMAKE_CXX_FLAGS "-std=c++11")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -march=native -ggdb -fsanitize=address -g")
+set(CMAKE_CXX_FLAGS_RelWithDebInfo "${CMAKE_CXX_FLAGS_RelWithDebInfo} -march=native -ggdb -fsanitize=address -ggdb")
 
 find_package(OpenMP REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -66,14 +65,14 @@ ADD_LIBRARY(csm_eigen
     )
 
 add_library(calc_lib
-    src/camera_models/src/Utils.cc
-    src/camera_models/src/Camera.cc
-    src/camera_models/src/CameraFactory.cc
-    src/camera_models/src/PinholeCamera.cc
-    src/camera_models/src/PinholeFullCamera.cc
-    src/camera_models/src/CataCamera.cc
-    src/camera_models/src/EquidistantCamera.cc
-    src/camera_models/src/ScaramuzzaCamera.cc
+    src/camera_models/Utils.cc
+    src/camera_models/Camera.cc
+    src/camera_models/CameraFactory.cc
+    src/camera_models/PinholeCamera.cc
+    src/camera_models/PinholeFullCamera.cc
+    src/camera_models/CataCamera.cc
+    src/camera_models/EquidistantCamera.cc
+    src/camera_models/ScaramuzzaCamera.cc
     src/calc_cam_pose/calcCamPose.cpp
     src/calc_cam_pose/ethz_apriltag/Edge.cc
     src/calc_cam_pose/ethz_apriltag/FloatImage.cc

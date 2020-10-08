@@ -18,8 +18,7 @@ RGBD_CALIBRATION::RGBD_CALIBRATION(CameraPtr depth_cam_, CameraPtr rgb_cam_, Sop
     std::cout << "depth_cam_->imageWidth()=" << depth_cam_->imageWidth() <<std::endl;
     std::cout << "depth_cam_->imageHeight()=" << depth_cam_->imageHeight() <<std::endl;
     //TODO:: initial (1,0,0) or (0,1,0) -> [0] + [1]*z + [2]*z^2
-    depth_error_function_ = calibration::Polynomial<double, 2>(Eigen::Vector3d(0, 1, 0));
-
+    depth_error_function_ = calibration::Polynomial<double, 2>(Eigen::Vector3d(0.0,1.0,0.0));
     //TODO:: introduce
     local_model_ = boost::make_shared<calibration::LocalModel>(images_size_depth);
     calibration::LocalModel::Data::Ptr local_matrix = local_model_->createMatrix(calibration::Size2(2, 2), calibration::LocalPolynomial::IdentityCoefficients());
@@ -163,7 +162,6 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
 {
     std::cout << "OptimizeAll Start" << std::endl;
 
-
     ceres::Problem problem;
     Eigen::Matrix<double, Eigen::Dynamic, 7, Eigen::DontAlign | Eigen::RowMajor> data(obs_num, 7); //Twc
     Eigen::Matrix<double, 1, 7, Eigen::DontAlign | Eigen::RowMajor> transform;                     //Tdc
@@ -184,16 +182,36 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
         double timestamp = close_to_far[i].second;
         if (!pcl_frame_vec[timestamp]->plane_extracted_ || pcl_frame_vec.find(timestamp) == pcl_frame_vec.end())
             continue;
-            
-        Sophus::SE3d Tcw_tmp = rgb_frame_vec[timestamp]->Twc.inverse();
-        data.row(i)[0] = Tcw_tmp.unit_quaternion().w();
-        data.row(i)[1] = Tcw_tmp.unit_quaternion().x();
-        data.row(i)[2] = Tcw_tmp.unit_quaternion().y();
-        data.row(i)[3] = Tcw_tmp.unit_quaternion().z();
-        data.row(i).tail<3>() = Tcw_tmp.translation();
 
-        // TransformDistortionError *error;
+        rgb_frame_vec[timestamp]->Tcw = rgb_frame_vec[timestamp]->Twc.inverse();
+        data.row(i)[0] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().w();
+        data.row(i)[1] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().x();
+        data.row(i)[2] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().y();
+        data.row(i)[3] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().z();
+        data.row(i).tail<3>() = rgb_frame_vec[timestamp]->Tcw.translation();
+
+        TransformDistortionError *error;
         ceres::CostFunction *cost_function;
+
+        error = new TransformDistortionError(model_depth_cam,
+                                             rgbd_calibration::col,
+                                             rgbd_calibration::row,
+                                             rgb_frame_vec[timestamp]->x3Dw,
+                                             calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->undistorted_cloud_),
+                                             *pcl_frame_vec[timestamp]->estimated_plane_.indices_,
+                                             depth_error_function_,
+                                             images_size_);
+        cost_function = new TransformDistortionCostFunction(error,
+                                                            ceres::DO_NOT_TAKE_OWNERSHIP,
+                                                            3 *  pcl_frame_vec[timestamp]->cloud_->size());
+        problem.AddResidualBlock(cost_function,
+                                 NULL, //new ceres::CauchyLoss(1.0),
+                                 transform.data(),
+                                 transform.data() + 4,
+                                 global_matrix_->model()->dataPtr(),
+                                 data.row(i).data(),
+                                 data.row(i).data() + 4,
+                                 delta);
 
         ReprojectionError *repr_error = new ReprojectionError(model_rgb_cam,
                                                               rgb_frame_vec[timestamp]->x3Dw,
@@ -213,31 +231,59 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
 
         problem.SetParameterization(data.row(i).data(), new ceres::QuaternionParameterization());
     }
-
-    // problem.SetParameterization(transform.data(), new ceres::QuaternionParameterization());
-    
-    //
-    for (size_t k = 0; k < 10; k++)
-    {
-        std::cout << "k=" << k <<"  before data.row(i).data()=" << data.row(k)<<std::endl;
-    }
-    
+    std::cout << "OptimizeAll error5" << std::endl;
+    problem.SetParameterization(transform.data(), new ceres::QuaternionParameterization());
+    std::cout << "OptimizeAll error6" << std::endl;
 
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     options.max_num_iterations = 20;
     options.minimizer_progress_to_stdout = true;
-    options.num_threads = 3;
+    options.num_threads = 1;
 
     //  problem.SetParameterBlockConstant(delta);
-
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
-    std::cout << "============" <<std::endl;
-    for (size_t k = 0; k < 10; k++)
+
+    //output-------------------------
+    Eigen::Quaterniond Qdc(transform[0], transform[1], transform[2], transform[3]); //W X Y Z
+    // rotation = Quaternion(transform[0], transform[1], transform[2], transform[3]);
+    Eigen::Vector3d tdc = transform.tail<3>();
+    std::cout << "Qdc xyzw=" << Qdc.coeffs() << std::endl;
+    std::cout << "tdc=" << tdc << std::endl;
+
+    std::cout << "delta[0]=" << delta[0] << " delta[1]=" << delta[1]
+              << " delta[2]=" << delta[2] << " delta[3]=" << delta[3] << std::endl;
+
+    const int DEGREE = calibration::MathTraits<calibration::GlobalPolynomial>::Degree;
+    const int MIN_DEGREE = calibration::MathTraits<calibration::GlobalPolynomial>::MinDegree;
+    const int SIZE = DEGREE - MIN_DEGREE + 1;
+    typedef calibration::MathTraits<calibration::GlobalPolynomial>::Coefficients Coefficients;
+#if 0
+  GlobalPolynomial p1(global_matrix_->model()->polynomial(0, 0));
+  GlobalPolynomial p2(global_matrix_->model()->polynomial(0, 1));
+  GlobalPolynomial p3(global_matrix_->model()->polynomial(1, 0));
+
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> A(SIZE, SIZE);
+  Eigen::Matrix<Scalar, Eigen::Dynamic, 1> b(SIZE, 1);
+  for (int i = 0; i < SIZE; ++i)
+  {
+    Scalar x(i + 1);
+    Scalar y = p2.evaluate(x) + p3.evaluate(x) - p1.evaluate(x);
+    Scalar tmp(1.0);
+    for (int j = 0; j < MIN_DEGREE; ++j)
+      tmp *= x;
+    for (int j = 0; j < SIZE; ++j)
     {
-        std::cout << "k=" << k <<"  after data.row(i).data()=" << data.row(k) <<std::endl;
+      A(i, j) = tmp;
+      tmp *= x;
     }
+    b[i] = y;
+  }
+
+  Eigen::Matrix<Scalar, Eigen::Dynamic, 1> x = A.colPivHouseholderQr().solve(b);
+  global_matrix_->model()->polynomial(1, 1) = x;
+#endif
 }
 
 int RGBD_CALIBRATION::EstimateTransform()
@@ -343,9 +389,12 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
             calibration::PlaneInfo plane_info;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
-                pcl_frame_vec[timestamp]->estimated_plane_ = plane_info;
-                pcl_frame_vec[timestamp]->undistorted_cloud_ = und_cloud;
-                pcl_frame_vec[timestamp]->plane_extracted_ = true;
+                if (plane_info.indices_->size() > 200)
+                {
+                    pcl_frame_vec[timestamp]->estimated_plane_ = plane_info;
+                    pcl_frame_vec[timestamp]->undistorted_cloud_ = und_cloud;
+                    pcl_frame_vec[timestamp]->plane_extracted_ = true;
+                }
 
 #pragma omp critical
                 {

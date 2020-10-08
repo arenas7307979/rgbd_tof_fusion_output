@@ -1,5 +1,5 @@
-#include "../include/ScaramuzzaCamera.h"
-#include "../include/Utils.h"
+#include "camera_models/ScaramuzzaCamera.h"
+#include "camera_models/Utils.h"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
@@ -653,6 +653,18 @@ void OCAMCamera::liftProjective(const Eigen::Vector2d &p,
   }
 
   P << xc[0], xc[1], -z;
+}
+
+/**
+ * \brief Lifts a point from the normal of image plane to its projective ray
+ *
+ * \param p image coordinates
+ * \param P coordinates of the projective ray
+ */
+void OCAMCamera::normalliftProjective(const Eigen::Vector2d &p,
+                                      Eigen::Vector3d &P) const
+{
+  std::cout << "TODO OCAMCamera::normalliftProjective" << std::endl;
 }
 
 /**

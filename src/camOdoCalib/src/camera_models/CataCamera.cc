@@ -1,5 +1,5 @@
-#include "../include/CataCamera.h"
-#include "../include/Utils.h"
+#include "camera_models/CataCamera.h"
+#include "camera_models/Utils.h"
 
 #include <cmath>
 #include <cstdio>
@@ -449,6 +449,18 @@ void CataCamera::liftSphere(const Eigen::Vector2d &p,
              (1.0 + mx_u * mx_u + my_u * my_u);
     P << lambda * mx_u, lambda * my_u, lambda - xi;
   }
+}
+
+/**
+ * \brief Lifts a point from the normal of image plane to its projective ray
+ *
+ * \param p image coordinates
+ * \param P coordinates of the projective ray
+ */
+void CataCamera::normalliftProjective(const Eigen::Vector2d &p,
+                                      Eigen::Vector3d &P) const
+{
+  std::cout << "TODO CataCamera::normalliftProjective" << std::endl;
 }
 
 /**

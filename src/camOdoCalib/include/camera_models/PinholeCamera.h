@@ -4,7 +4,7 @@
 #include <opencv2/core/core.hpp>
 #include <string>
 
-#include "Camera.h"
+#include "camera_models/Camera.h"
 #include "ceres/rotation.h"
 
 class PinholeCamera : public Camera
@@ -85,6 +85,10 @@ public:
   // Lift points from the image plane to the projective space
   void liftProjective(const Eigen::Vector2d &p, Eigen::Vector3d &P) const;
   //%output P
+
+  // Lift points from the normal of (K^-1) image plane to the projective space
+  void normalliftProjective(const Eigen::Vector2d &p,
+                            Eigen::Vector3d &P) const;
 
   // Projects 3D points to the image plane (Pi function)
   void spaceToPlane(const Eigen::Vector3d &P, Eigen::Vector2d &p) const;

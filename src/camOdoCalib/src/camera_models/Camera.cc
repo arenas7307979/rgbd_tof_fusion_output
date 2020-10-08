@@ -1,6 +1,5 @@
-#include "../include/Camera.h"
-#include "../include/ScaramuzzaCamera.h"
-
+#include "camera_models/Camera.h"
+#include "camera_models/ScaramuzzaCamera.h"
 #include <opencv2/calib3d/calib3d.hpp>
 
 Camera::Parameters::Parameters(ModelType modelType)

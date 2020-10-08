@@ -17,8 +17,8 @@
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/image_encodings.h>
 
-#include "camera_models/include/Camera.h"
-#include "camera_models/include/CameraFactory.h"
+#include "camera_models/Camera.h"
+#include "camera_models/CameraFactory.h"
 #include "calc_cam_pose/calcCamPose.h"
 
 #include "solveQyx.h" 
