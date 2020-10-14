@@ -4,6 +4,7 @@
 
 #define DEBUG_PCL_SHOW 1
 #define DEBUG 0
+#include <ros/ros.h>
 
 #include <stdio.h>
 #include <mutex>
@@ -83,7 +84,7 @@ public:
         double timestamp;
         std::vector<cv::Point3f> x3Dw;
         Sophus::SE3d Twc;
-        Sophus::SE3d Tcw;
+        cv::Mat chessboard_img;
         std::vector<cv::Point2f> uv_distorted;
         std::vector<int> id_landmark;
     };
@@ -156,8 +157,8 @@ private:
 
     std::map<double, calibration::PlaneInfo> plane_info_map_; //timestamp / planeinfo
 
-
-
+    ros::NodeHandle nh;
+    ros::Publisher pcl_pub_;
 };
     using RGBD_CALIBRATIONPtr = std::shared_ptr<RGBD_CALIBRATION>;
     using RGBD_CALIBRATIONConstPtr = std::shared_ptr<const RGBD_CALIBRATION>;

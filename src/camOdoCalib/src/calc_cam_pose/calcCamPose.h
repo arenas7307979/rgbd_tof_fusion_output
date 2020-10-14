@@ -11,7 +11,7 @@ namespace rgbd_calibration
 static const int col = 6;
 static const int row = 5;
 static const float square_size = 0.108; // unit:  m
-
+static const double chessboard_obs_distance = 0.03;
 enum PatternType
 {
     APRIL,

@@ -1,7 +1,6 @@
 #include "rgbd_calibration.h"
 #include "systrace/tracer.h"
 
-
 //Note!!!
 //校正板參數在calcCamPose.h修改
 //Calibration board parameters are modified in calcCamPose.h.
@@ -14,11 +13,11 @@ RGBD_CALIBRATION::RGBD_CALIBRATION(CameraPtr depth_cam_, CameraPtr rgb_cam_, Sop
     calibration::Size2 images_size_depth;
     images_size_depth.x() = depth_cam_->imageWidth();
     images_size_depth.y() = depth_cam_->imageHeight();
-    
-    std::cout << "depth_cam_->imageWidth()=" << depth_cam_->imageWidth() <<std::endl;
-    std::cout << "depth_cam_->imageHeight()=" << depth_cam_->imageHeight() <<std::endl;
+
+    std::cout << "depth_cam_->imageWidth()=" << depth_cam_->imageWidth() << std::endl;
+    std::cout << "depth_cam_->imageHeight()=" << depth_cam_->imageHeight() << std::endl;
     //TODO:: initial (1,0,0) or (0,1,0) -> [0] + [1]*z + [2]*z^2
-    depth_error_function_ = calibration::Polynomial<double, 2>(Eigen::Vector3d(0.0,1.0,0.0));
+    depth_error_function_ = calibration::Polynomial<double, 2>(Eigen::Vector3d(0.0, 1.0, 0.0));
     //TODO:: introduce
     local_model_ = boost::make_shared<calibration::LocalModel>(images_size_depth);
     calibration::LocalModel::Data::Ptr local_matrix = local_model_->createMatrix(calibration::Size2(2, 2), calibration::LocalPolynomial::IdentityCoefficients());
@@ -33,14 +32,19 @@ RGBD_CALIBRATION::RGBD_CALIBRATION(CameraPtr depth_cam_, CameraPtr rgb_cam_, Sop
 
     //TODO:: introduce
     local_fit_ = boost::make_shared<calibration::LocalMatrixFitPCL>(local_model_);
-    local_fit_ ->setDepthErrorFunction(depth_error_function_);
-    
+    local_fit_->setDepthErrorFunction(depth_error_function_);
+
     global_fit_ = boost::make_shared<calibration::GlobalMatrixFitPCL>(global_model_);
     global_fit_->setDepthErrorFunction(depth_error_function_);
-    calibration::InverseGlobalModel::Data::Ptr matrix = boost::make_shared<calibration::InverseGlobalModel::Data>( calibration::Size2(1, 1), calibration::InverseGlobalPolynomial::IdentityCoefficients() );
+    calibration::InverseGlobalModel::Data::Ptr matrix = boost::make_shared<calibration::InverseGlobalModel::Data>(calibration::Size2(1, 1), calibration::InverseGlobalPolynomial::IdentityCoefficients());
     inverse_global_model_ = boost::make_shared<calibration::InverseGlobalModel>(global_model_->imageSize());
     inverse_global_model_->setMatrix(matrix);
     inverse_global_fit_ = boost::make_shared<calibration::InverseGlobalMatrixFitEigen>(inverse_global_model_);
+
+//DEBUG PCL
+#if DEBUG_PCL_SHOW
+    pcl_pub_ = nh.advertise<sensor_msgs::PointCloud2>("/calibration/debug_correct_cloud", 1);
+#endif
 }
 
 //Note!!!
@@ -71,11 +75,12 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         if (isCalOk == false)
         {
             bad_idx.push_back(i);
-            std::cout << "isCalOk false=" <<std::endl;
+            std::cout << "isCalOk false=" << std::endl;
             continue;
         }
-        
-        if(init_state){
+
+        if (init_state)
+        {
             Twc_last.translation() = twc;
             Twc_last.setQuaternion(Eigen::Quaterniond(roatation_matrix));
             init_state = false;
@@ -90,18 +95,16 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
             if (Tw1_Tw2.translation().norm() < 0.05)
             {
                 bad_idx.push_back(i);
-                std::cout << "no enough translation=" << Tw1_Tw2.translation().norm() <<std::endl;
+                std::cout << "no enough translation=" << Tw1_Tw2.translation().norm() << std::endl;
                 continue;
             }
         }
-    
 
         //check id has
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
         cur_rgb_info->uv_distorted = uv_2d_distorted;
         cur_rgb_info->x3Dw = x3Dw;
-
-
+        cur_rgb_info->chessboard_img = std::get<0>(rgb_depth_time[i]).clone();
         cur_rgb_info->id_landmark = id_landmark; // 1 landmark_id is consists of 4 uv_point; 22 id_landmark : 88 uv_distorted point
         cur_rgb_info->Twc.translation() = twc;
         cur_rgb_info->Twc.setQuaternion(qwc);
@@ -132,12 +135,12 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
 
     //step2.
     // ("Estimating undistortion map...");
-    std::cout << "EstimateLocalModel" <<std::endl;
+    std::cout << "EstimateLocalModel" << std::endl;
     EstimateLocalModel();
 
     //step3.
     // ("Recomputing undistortion map..."); according local_fit and inverse_global_fit to undistort center and pcl for new input
-    std::cout << "EstimateLocalModelReverse" <<std::endl;
+    std::cout << "EstimateLocalModelReverse" << std::endl;
     EstimateLocalModelReverse();
 
     //step4. ("Estimating global error correction map...");
@@ -148,7 +151,6 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
     std::cout << "EstimateTransform Start" << std::endl;
     int obs_num = EstimateTransform(); //estimate pose between planes
     std::cout << "EstimateTransform ENDing" << std::endl;
-
 
     //step6. optimize BA, "obs_count" --> need change to 70
     OptimizeAll(obs_num);
@@ -179,12 +181,12 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
         if (!pcl_frame_vec[timestamp]->plane_extracted_ || pcl_frame_vec.find(timestamp) == pcl_frame_vec.end())
             continue;
 
-        rgb_frame_vec[timestamp]->Tcw = rgb_frame_vec[timestamp]->Twc.inverse();
-        data.row(i)[0] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().w();
-        data.row(i)[1] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().x();
-        data.row(i)[2] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().y();
-        data.row(i)[3] = rgb_frame_vec[timestamp]->Tcw.unit_quaternion().z();
-        data.row(i).tail<3>() = rgb_frame_vec[timestamp]->Tcw.translation();
+        Sophus::SE3d Tcw = rgb_frame_vec[timestamp]->Twc.inverse();
+        data.row(i)[0] = Tcw.unit_quaternion().w();
+        data.row(i)[1] = Tcw.unit_quaternion().x();
+        data.row(i)[2] = Tcw.unit_quaternion().y();
+        data.row(i)[3] = Tcw.unit_quaternion().z();
+        data.row(i).tail<3>() = Tcw.translation();
 
         TransformDistortionError *error;
         ceres::CostFunction *cost_function;
@@ -215,7 +217,6 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
                                                               rgb_frame_vec[timestamp]->x3Dw,
                                                               rgbd_calibration::col, rgbd_calibration::row,
                                                               rgb_frame_vec[timestamp]->uv_distorted);
-
 
         //number of observation uv factor : rgb_frame_vec[timestamp]->x3Dw.size()
         //number of uv-residual: 2(u and v) * rgb_frame_vec[timestamp]->x3Dw.size()
@@ -318,9 +319,8 @@ int RGBD_CALIBRATION::EstimateTransform()
         //std::cout << "Tdepthinit_curdepth.translation()" << Tdepthinit_curdepth.translation() << std::endl;
         //std::cout << "project_curplane_to_init" << project_curplane_to_init.matrix() << std::endl;
 
-
         //convert curr plane to inital plane
-        calib_map.addPair(pcl_frame_vec[timestamp]->estimated_plane_.plane_,   pcl_frame_vec[timestamp]->checkboard_plane_);
+        calib_map.addPair(pcl_frame_vec[timestamp]->estimated_plane_.plane_, pcl_frame_vec[timestamp]->checkboard_plane_);
         obs_num++;
         // std::cout << "plane eq:" << pcl_frame_vec[timestamp]->estimated_plane_.plane_.coeffs() << std::endl;
     }
@@ -335,201 +335,10 @@ int RGBD_CALIBRATION::EstimateTransform()
         Eigen::Vector3d translation_vec = translation.vector();
         Tdepth_rgb.setQuaternion(Eigen::Quaterniond(rot_matrix));
         Tdepth_rgb.translation() = translation_vec;
-        std::cout << "Tdepth_rgb = " << Tdepth_rgb.matrix3x4() <<std::endl;
+        std::cout << "Tdepth_rgb = " << Tdepth_rgb.matrix3x4() << std::endl;
     }
 
     return obs_num;
-}
-
-void RGBD_CALIBRATION::EstimateGlobalModel()
-{
-
-#if 1
-    for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
-    {
-        int th = 0 ;
-        // for (int th = 0; th < max_threads_; ++th)
-        {
-            if (i + th >= close_to_far.size())
-                continue;
-
-            //estimate center x3Dw in depth coordinate.
-            double timestamp = close_to_far[i + th].second;
-
-            Eigen::Vector3d chessboard_ori_to_depthcam(rgb_frame_vec[timestamp]->x3Dw[0].x,
-                                                       rgb_frame_vec[timestamp]->x3Dw[0].y,
-                                                       rgb_frame_vec[timestamp]->x3Dw[0].z);
-            Eigen::Vector3d chessboard_ori_to_depthcam1(rgb_frame_vec[timestamp]->x3Dw[1].x,
-                                                        rgb_frame_vec[timestamp]->x3Dw[1].y,
-                                                        rgb_frame_vec[timestamp]->x3Dw[1].z);
-            Eigen::Vector3d chessboard_ori_to_depthcam2(rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].x,
-                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].y,
-                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].z);
-
-            chessboard_ori_to_depthcam = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
-            chessboard_ori_to_depthcam1 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam1;
-            chessboard_ori_to_depthcam2 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam2;
-
-            Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
-                                                           rgb_frame_vec[timestamp]->x3Dw.back().y,
-                                                           rgb_frame_vec[timestamp]->x3Dw.back().z);
-            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_mid_to_depthcam / 2);
-            proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * proj_center_chess_to_depthCam;
-
-            calibration::Point3 und_color_cb_center_tmp;
-            und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
-            und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
-            und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
-
-            calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
-            inverse_global.undistort(0, 0, und_color_cb_center_tmp);
-            proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
-            proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
-            proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
-
-            // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
-            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
-            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
-            calibration::LocalMatrixPCL local(local_fit_->model());
-            local.undistort(*und_cloud);
-
-            calibration::PlaneInfo plane_info;
-            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
-            {
-                std::cout << "EstimateGlobalModel ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
-                if (plane_info.indices_->size() > 200)
-                {
-                    pcl_frame_vec[timestamp]->estimated_plane_ = plane_info;
-                    pcl_frame_vec[timestamp]->undistorted_cloud_ = und_cloud;
-                    pcl_frame_vec[timestamp]->plane_extracted_ = true;
-                }
-
-                {
-                    calibration::Indices reduced = *plane_info.indices_;
-                    std::random_shuffle(reduced.begin(), reduced.end());
-                    //reduced.resize(reduced.size() / 5) is sample inliners
-                    global_fit_->accumulateCloud(*und_cloud, reduced);
-                    //TODO:: target plane : pcl_frame_vec[timestamp]->checkboard_plane_.plane_
-                    //input:: *und_cloud, reduced which are changed by local_fit
-                    //ans1:
-                    // global_fit_->addAccumulatedPoints(pcl_frame_vec[timestamp]->checkboard_plane_); //XY-PLANE (0,0,1) normal, 0 distance
-
-                    //ans2:
-                    calibration::Plane fitted_plane =
-                    calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*und_cloud, reduced));
-                    global_fit_->addAccumulatedPoints(fitted_plane);
-
-                    //ans3:
-                    calibration::Plane plane_from_chessboard = calibration::Plane::Through(chessboard_ori_to_depthcam,
-                                                                                         chessboard_ori_to_depthcam1,
-                                                                                         chessboard_ori_to_depthcam2);
-                    pcl_frame_vec[timestamp]->checkboard_plane_ = plane_from_chessboard;
-                    
-                    //global_fit_->addAccumulatedPoints(plane_from_chessboard);
-                }
-            }
-        }
-    }
-    global_fit_->update();
-#endif
-}
-
-void RGBD_CALIBRATION::EstimateLocalModelReverse()
-{
-
-    //only reset obs, retain calibration matrix
-    local_fit_->reset();
-    bool global_update = true;
-    bool local_update = true;
-    int w = model_depth_cam->imageWidth();
-    int h = model_depth_cam->imageHeight();
-    for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
-    {
-        // if (i > 30)
-        //     break;
-        // for (int th = 0; th < max_threads_; ++th)
-        int th = 0;
-        {
-            if (i + th >= close_to_far.size())
-                continue;
-
-            //close to far
-            double timestamp = close_to_far[i + th].second;
-
-            Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
-                                                           rgb_frame_vec[timestamp]->x3Dw.back().y,
-                                                           rgb_frame_vec[timestamp]->x3Dw.back().z);
-            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_mid_to_depthcam / 2);
-            proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * proj_center_chess_to_depthCam;
-            
-            // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
-            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
-            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
-
-//correct center x3Ddepth from checkboard project to depth cam
-            if (global_update)
-            {
-                calibration::Point3 und_color_cb_center_tmp;
-                und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
-                und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
-                und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
-                
-                calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
-                inverse_global.undistort(0, 0, und_color_cb_center_tmp);
-                proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
-                proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
-                proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
-            }
-
-//correct pcl undistoration
-            if (local_update)
-            {
-                calibration::LocalMatrixPCL local(local_fit_->model());
-                local.undistort(*und_cloud);
-            }
-
-            calibration::PlaneInfo plane_info;
-            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
-            {
-                std::cout << "EstimateLocalModelReverse ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
-                //indices info from current extraction plane of inliers --> plane_info
-                //indices only for current fitted_plane
-                boost::shared_ptr<std::vector<int>> indices = boost::make_shared<std::vector<int>>(); // = *plane_info.indices_;
-                indices->reserve(plane_info.indices_->size());
-                for (size_t j = 0; j < plane_info.indices_->size(); ++j)
-                {
-                    int r = (*plane_info.indices_)[j] / w;
-                    int c = (*plane_info.indices_)[j] % w;
-                    if ((r - h / 2) * (r - h / 2) + (c - w / 2) * (c - w / 2) < (h / 2) * (h / 2))
-                        indices->push_back((*plane_info.indices_)[j]);
-                }
-
-                //fitted_plane and plane_info are different
-                calibration::Plane fitted_plane = 
-                calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, *indices));
-
-                //old_indices infor from idx of inliner for EstimateLocalModelPlane result(old)
-                boost::shared_ptr<std::vector<int>> old_indices;
-                {
-                    old_indices = plane_info_map_[timestamp].indices_;
-                }
-                indices->clear();
-                //std::set_union, input [old_indices, plane_info.indices_]  output *indices
-                std::set_union(old_indices->begin(), old_indices->end(), plane_info.indices_->begin(), plane_info.indices_->end(), 
-                std::back_inserter(*indices));
-
-                {
-                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *indices);
-                    local_fit_->addAccumulatedPoints(fitted_plane);
-                    plane_info_map_[timestamp].indices_ = indices;
-                }
-            }
-        }
-        //There is a table of the same size as the image in local_fit_
-        //and each coordinate in the table corresponds to a polynomial(second order) for correction function
-        std::cout << "===EstimateLocalModelReverse local_fit_===" <<std::endl;
-        local_fit_->update();
-    }
 }
 
 //("Estimating undistortion map...");
@@ -581,6 +390,77 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 calibration::LocalMatrixPCL local(local_fit_->model());
                 local.undistort(*und_cloud);
             }
+
+#if DEBUG_PCL_SHOW
+            {
+                pcl::PointCloud<pcl::PointXYZRGB> debug_cloud_pcl;
+
+                //depth sensor pcl
+                for (int j = 0; j < model_depth_cam->imageHeight(); ++j) //240
+                {
+                    for (int k = 0; k < model_depth_cam->imageWidth(); ++k) //320
+                    {
+                        if (local_update)
+                        {
+                            pcl::PointXYZRGB pt_undist;
+                            pt_undist.x = und_cloud->at(k, j).x; //Xc in depth cam
+                            pt_undist.y = und_cloud->at(k, j).y; //Yc in depth cam
+                            pt_undist.z = und_cloud->at(k, j).z; //Zc in depth cam
+                            pt_undist.r = 150;
+                            pt_undist.g = 150;
+                            pt_undist.b = 150;
+                            debug_cloud_pcl.push_back(pt_undist);
+                        }
+                        pcl::PointXYZRGB pt;
+                        pt.x = pcl_frame_vec[timestamp]->cloud_->at(k, j).x; //Xc in depth cam
+                        pt.y = pcl_frame_vec[timestamp]->cloud_->at(k, j).y; //Yc in depth cam
+                        pt.z = pcl_frame_vec[timestamp]->cloud_->at(k, j).z; //Zc in depth cam
+                        pt.r = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.g = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.b = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        debug_cloud_pcl.push_back(pt);
+                    }
+                }
+                //chessboard 3D pcl
+                for (int j = 0; j < rgb_frame_vec[timestamp]->x3Dw.size(); ++j)
+                {
+                    Eigen::Vector3d chessboard_x3Dw(rgb_frame_vec[timestamp]->x3Dw[j].x,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].y,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].z);
+
+                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    pcl::PointXYZRGB pt;
+                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.r = 0;
+                    pt.g = 0;
+                    pt.b = 255;
+                    debug_cloud_pcl.push_back(pt);
+                }
+
+                if (global_update)
+                {
+                    pcl::PointXYZRGB pt_gloabl_center;
+                    pt_gloabl_center.x = proj_center_chess_to_depthCam.x(); //Xc in depth cam
+                    pt_gloabl_center.y = proj_center_chess_to_depthCam.y(); //Yc in depth cam
+                    pt_gloabl_center.z = proj_center_chess_to_depthCam.z(); //Zc in depth cam
+                    pt_gloabl_center.r = 255;
+                    pt_gloabl_center.g = 0;
+                    pt_gloabl_center.b = 0;
+                    debug_cloud_pcl.push_back(pt_gloabl_center);
+                }
+
+                debug_cloud_pcl.width = debug_cloud_pcl.points.size();
+                debug_cloud_pcl.height = 1;
+                debug_cloud_pcl.is_dense = true;
+                sensor_msgs::PointCloud2 cloud_msg;
+                pcl::toROSMsg(debug_cloud_pcl, cloud_msg);
+                cloud_msg.header.frame_id = "map";
+                pcl_pub_.publish(cloud_msg);
+            }
+#endif
+
             calibration::PlaneInfo plane_info;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             // if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
@@ -602,7 +482,6 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 calibration::Plane fitted_plane =
                     calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, indices));
                 plane_info_map_[timestamp].plane_ = fitted_plane;
-
 
                 // std:;cout << "params fitted_plane.offset=" << fitted_plane.offset <<std::endl;
 
@@ -646,6 +525,334 @@ void RGBD_CALIBRATION::EstimateLocalModel()
     }
 }
 
+void RGBD_CALIBRATION::EstimateLocalModelReverse()
+{
+
+    //only reset obs, retain calibration matrix
+    local_fit_->reset();
+    bool global_update = true;
+    bool local_update = true;
+    int w = model_depth_cam->imageWidth();
+    int h = model_depth_cam->imageHeight();
+    for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
+    {
+        // if (i > 30)
+        //     break;
+        // for (int th = 0; th < max_threads_; ++th)
+        int th = 0;
+        {
+            if (i + th >= close_to_far.size())
+                continue;
+
+            //close to far
+            double timestamp = close_to_far[i + th].second;
+
+            Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().y,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().z);
+            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_mid_to_depthcam / 2);
+            proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * proj_center_chess_to_depthCam;
+
+            // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
+            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
+            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
+
+            //correct center x3Ddepth from checkboard project to depth cam
+            if (global_update)
+            {
+                calibration::Point3 und_color_cb_center_tmp;
+                und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
+                und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
+                und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
+
+                calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
+                inverse_global.undistort(0, 0, und_color_cb_center_tmp);
+                proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
+                proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
+                proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
+            }
+
+            //correct pcl undistoration
+            if (local_update)
+            {
+                calibration::LocalMatrixPCL local(local_fit_->model());
+                local.undistort(*und_cloud);
+            }
+
+#if DEBUG_PCL_SHOW
+            {
+                pcl::PointCloud<pcl::PointXYZRGB> debug_cloud_pcl;
+
+                //depth sensor pcl
+                for (int j = 0; j < model_depth_cam->imageHeight(); ++j) //240
+                {
+                    for (int k = 0; k < model_depth_cam->imageWidth(); ++k) //320
+                    {
+                        if (local_update)
+                        {
+                            pcl::PointXYZRGB pt_undist;
+                            pt_undist.x = und_cloud->at(k, j).x; //Xc in depth cam
+                            pt_undist.y = und_cloud->at(k, j).y; //Yc in depth cam
+                            pt_undist.z = und_cloud->at(k, j).z; //Zc in depth cam
+                            pt_undist.r = 150;
+                            pt_undist.g = 150;
+                            pt_undist.b = 150;
+                            debug_cloud_pcl.push_back(pt_undist);
+                        }
+                        pcl::PointXYZRGB pt;
+                        pt.x = pcl_frame_vec[timestamp]->cloud_->at(k, j).x; //Xc in depth cam
+                        pt.y = pcl_frame_vec[timestamp]->cloud_->at(k, j).y; //Yc in depth cam
+                        pt.z = pcl_frame_vec[timestamp]->cloud_->at(k, j).z; //Zc in depth cam
+                        pt.r = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.g = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.b = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        debug_cloud_pcl.push_back(pt);
+                    }
+                }
+                //chessboard 3D pcl
+                for (int j = 0; j < rgb_frame_vec[timestamp]->x3Dw.size(); ++j)
+                {
+                    Eigen::Vector3d chessboard_x3Dw(rgb_frame_vec[timestamp]->x3Dw[j].x,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].y,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].z);
+
+                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    pcl::PointXYZRGB pt;
+                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.r = 0;
+                    pt.g = 0;
+                    pt.b = 255;
+                    debug_cloud_pcl.push_back(pt);
+                }
+
+                if (global_update)
+                {
+                    pcl::PointXYZRGB pt_gloabl_center;
+                    pt_gloabl_center.x = proj_center_chess_to_depthCam.x(); //Xc in depth cam
+                    pt_gloabl_center.y = proj_center_chess_to_depthCam.y(); //Yc in depth cam
+                    pt_gloabl_center.z = proj_center_chess_to_depthCam.z(); //Zc in depth cam
+                    pt_gloabl_center.r = 255;
+                    pt_gloabl_center.g = 0;
+                    pt_gloabl_center.b = 0;
+                    debug_cloud_pcl.push_back(pt_gloabl_center);
+                }
+
+                debug_cloud_pcl.width = debug_cloud_pcl.points.size();
+                debug_cloud_pcl.height = 1;
+                debug_cloud_pcl.is_dense = true;
+                sensor_msgs::PointCloud2 cloud_msg;
+                pcl::toROSMsg(debug_cloud_pcl, cloud_msg);
+                cloud_msg.header.frame_id = "map";
+                pcl_pub_.publish(cloud_msg);
+            }
+#endif
+
+            calibration::PlaneInfo plane_info;
+            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
+            {
+                std::cout << "EstimateLocalModelReverse ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
+                //indices info from current extraction plane of inliers --> plane_info
+                //indices only for current fitted_plane
+                boost::shared_ptr<std::vector<int>> indices = boost::make_shared<std::vector<int>>(); // = *plane_info.indices_;
+                indices->reserve(plane_info.indices_->size());
+                for (size_t j = 0; j < plane_info.indices_->size(); ++j)
+                {
+                    int r = (*plane_info.indices_)[j] / w;
+                    int c = (*plane_info.indices_)[j] % w;
+                    if ((r - h / 2) * (r - h / 2) + (c - w / 2) * (c - w / 2) < (h / 2) * (h / 2))
+                        indices->push_back((*plane_info.indices_)[j]);
+                }
+
+                //fitted_plane and plane_info are different
+                calibration::Plane fitted_plane =
+                    calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, *indices));
+
+                //old_indices infor from idx of inliner for EstimateLocalModelPlane result(old)
+                boost::shared_ptr<std::vector<int>> old_indices;
+                {
+                    old_indices = plane_info_map_[timestamp].indices_;
+                }
+                indices->clear();
+                //std::set_union, input [old_indices, plane_info.indices_]  output *indices
+                std::set_union(old_indices->begin(), old_indices->end(), plane_info.indices_->begin(), plane_info.indices_->end(),
+                               std::back_inserter(*indices));
+
+                {
+                    local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *indices);
+                    local_fit_->addAccumulatedPoints(fitted_plane);
+                    plane_info_map_[timestamp].indices_ = indices;
+                }
+            }
+        }
+        //There is a table of the same size as the image in local_fit_
+        //and each coordinate in the table corresponds to a polynomial(second order) for correction function
+        std::cout << "===EstimateLocalModelReverse local_fit_===" << std::endl;
+        local_fit_->update();
+    }
+}
+
+void RGBD_CALIBRATION::EstimateGlobalModel()
+{
+#if 1
+    for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
+    {
+        int th = 0;
+        // for (int th = 0; th < max_threads_; ++th)
+        {
+            if (i + th >= close_to_far.size())
+                continue;
+
+            //estimate center x3Dw in depth coordinate.
+            double timestamp = close_to_far[i + th].second;
+
+            Eigen::Vector3d chessboard_ori_to_depthcam(rgb_frame_vec[timestamp]->x3Dw[0].x,
+                                                       rgb_frame_vec[timestamp]->x3Dw[0].y,
+                                                       rgb_frame_vec[timestamp]->x3Dw[0].z);
+            Eigen::Vector3d chessboard_ori_to_depthcam1(rgb_frame_vec[timestamp]->x3Dw[1].x,
+                                                        rgb_frame_vec[timestamp]->x3Dw[1].y,
+                                                        rgb_frame_vec[timestamp]->x3Dw[1].z);
+            Eigen::Vector3d chessboard_ori_to_depthcam2(rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].x,
+                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].y,
+                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].z);
+
+            chessboard_ori_to_depthcam = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
+            chessboard_ori_to_depthcam1 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam1;
+            chessboard_ori_to_depthcam2 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam2;
+
+            Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().y,
+                                                           rgb_frame_vec[timestamp]->x3Dw.back().z);
+            Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_mid_to_depthcam / 2);
+            proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * proj_center_chess_to_depthCam;
+
+            calibration::Point3 und_color_cb_center_tmp;
+            und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
+            und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
+            und_color_cb_center_tmp.z() = proj_center_chess_to_depthCam.z();
+
+            calibration::InverseGlobalMatrixEigen inverse_global(inverse_global_fit_->model());
+            inverse_global.undistort(0, 0, und_color_cb_center_tmp);
+            proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
+            proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
+            proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
+
+            // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
+            boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
+            und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
+            calibration::LocalMatrixPCL local(local_fit_->model());
+            local.undistort(*und_cloud);
+
+#if DEBUG_PCL_SHOW
+            {
+                pcl::PointCloud<pcl::PointXYZRGB> debug_cloud_pcl;
+
+                //depth sensor pcl
+                for (int j = 0; j < model_depth_cam->imageHeight(); ++j) //240
+                {
+                    for (int k = 0; k < model_depth_cam->imageWidth(); ++k) //320
+                    {
+                        {
+                            pcl::PointXYZRGB pt_undist;
+                            pt_undist.x = und_cloud->at(k, j).x; //Xc in depth cam
+                            pt_undist.y = und_cloud->at(k, j).y; //Yc in depth cam
+                            pt_undist.z = und_cloud->at(k, j).z; //Zc in depth cam
+                            pt_undist.r = 150;
+                            pt_undist.g = 150;
+                            pt_undist.b = 150;
+                            debug_cloud_pcl.push_back(pt_undist);
+                        }
+                        pcl::PointXYZRGB pt;
+                        pt.x = pcl_frame_vec[timestamp]->cloud_->at(k, j).x; //Xc in depth cam
+                        pt.y = pcl_frame_vec[timestamp]->cloud_->at(k, j).y; //Yc in depth cam
+                        pt.z = pcl_frame_vec[timestamp]->cloud_->at(k, j).z; //Zc in depth cam
+                        pt.r = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.g = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        pt.b = rgb_frame_vec[timestamp]->chessboard_img.at<uchar>(j, k);
+                        debug_cloud_pcl.push_back(pt);
+                    }
+                }
+                //chessboard 3D pcl
+                for (int j = 0; j < rgb_frame_vec[timestamp]->x3Dw.size(); ++j)
+                {
+                    Eigen::Vector3d chessboard_x3Dw(rgb_frame_vec[timestamp]->x3Dw[j].x,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].y,
+                                                    rgb_frame_vec[timestamp]->x3Dw[j].z);
+
+                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    pcl::PointXYZRGB pt;
+                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.r = 0;
+                    pt.g = 0;
+                    pt.b = 255;
+                    debug_cloud_pcl.push_back(pt);
+                }
+
+                {
+                    pcl::PointXYZRGB pt_gloabl_center;
+                    pt_gloabl_center.x = proj_center_chess_to_depthCam.x(); //Xc in depth cam
+                    pt_gloabl_center.y = proj_center_chess_to_depthCam.y(); //Yc in depth cam
+                    pt_gloabl_center.z = proj_center_chess_to_depthCam.z(); //Zc in depth cam
+                    pt_gloabl_center.r = 255;
+                    pt_gloabl_center.g = 0;
+                    pt_gloabl_center.b = 0;
+                    debug_cloud_pcl.push_back(pt_gloabl_center);
+                }
+
+                debug_cloud_pcl.width = debug_cloud_pcl.points.size();
+                debug_cloud_pcl.height = 1;
+                debug_cloud_pcl.is_dense = true;
+                sensor_msgs::PointCloud2 cloud_msg;
+                pcl::toROSMsg(debug_cloud_pcl, cloud_msg);
+                cloud_msg.header.frame_id = "map";
+                pcl_pub_.publish(cloud_msg);
+            }
+#endif
+
+            calibration::PlaneInfo plane_info;
+            if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
+            {
+                std::cout << "EstimateGlobalModel ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
+                if (plane_info.indices_->size() > 200)
+                {
+                    pcl_frame_vec[timestamp]->estimated_plane_ = plane_info;
+                    pcl_frame_vec[timestamp]->undistorted_cloud_ = und_cloud;
+                    pcl_frame_vec[timestamp]->plane_extracted_ = true;
+                }
+
+                {
+                    calibration::Indices reduced = *plane_info.indices_;
+                    std::random_shuffle(reduced.begin(), reduced.end());
+                    //reduced.resize(reduced.size() / 5) is sample inliners
+                    global_fit_->accumulateCloud(*und_cloud, reduced);
+                    //TODO:: target plane : pcl_frame_vec[timestamp]->checkboard_plane_.plane_
+                    //input:: *und_cloud, reduced which are changed by local_fit
+                    //ans1:
+                    // global_fit_->addAccumulatedPoints(pcl_frame_vec[timestamp]->checkboard_plane_); //XY-PLANE (0,0,1) normal, 0 distance
+
+                    //ans2:
+                    calibration::Plane fitted_plane =
+                        calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*und_cloud, reduced));
+                    global_fit_->addAccumulatedPoints(fitted_plane);
+
+                    //ans3:
+                    calibration::Plane plane_from_chessboard = calibration::Plane::Through(chessboard_ori_to_depthcam,
+                                                                                           chessboard_ori_to_depthcam1,
+                                                                                           chessboard_ori_to_depthcam2);
+                    pcl_frame_vec[timestamp]->checkboard_plane_ = plane_from_chessboard;
+
+                    //global_fit_->addAccumulatedPoints(plane_from_chessboard);
+                }
+            }
+        }
+    }
+    global_fit_->update();
+#endif
+}
+
 bool RGBD_CALIBRATION::ExtractPlane(CameraPtr color_cam_model,
                                     const PCLCloud3::ConstPtr &cloud,
                                     const Eigen::Vector3d &center,
@@ -653,22 +860,32 @@ bool RGBD_CALIBRATION::ExtractPlane(CameraPtr color_cam_model,
 {
     slam_ros::ScopedTrace tracer("ExtractPlane");
     //color_cb.width() = rgb_image num of rows / cols
-    double radius =  2 * (std::min(color_cam_model->imageWidth(), color_cam_model->imageHeight()) / 1.5); // TODO Add parameter
+    double radius = 2 * (std::min(color_cam_model->imageWidth(), color_cam_model->imageHeight()) / 1.5); // TODO Add parameter
     calibration::PointPlaneExtraction<calibration::PCLPoint3> plane_extractor;
     plane_extractor.setInputCloud(cloud);
     plane_extractor.setRadius(radius);
     bool plane_extracted = false;
 
-#if 0
+#if 1
     int r[] = {0, 1, 2};         // TODO Add parameter
     int k[] = {0, 1, -1, 2, -2}; // TODO Add parameter
-    for (int i = 0; i < 5 ; ++i)
+    for (int i = 0; i < 5; ++i)
     {
-        for (int j = 0; j < 3 ; ++j)
+        for (int j = 0; j < 3; ++j)
         {
             plane_extractor.setRadius((1 + r[j]) * radius);
             plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z() + (1 + r[j]) * radius * k[i]));
             plane_extracted = plane_extractor.extract(plane_info);
+            if (plane_info.indices_->size() > 5000 && plane_extracted)
+            {
+                std::cout << "sucess z change=" << (1 + r[j]) * radius * k[i] <<std::endl;
+                plane_extracted = true;
+                return plane_extracted;
+            }
+            else
+            {
+                plane_extracted = false;
+            }
         }
     }
 #else
@@ -676,5 +893,40 @@ bool RGBD_CALIBRATION::ExtractPlane(CameraPtr color_cam_model,
     plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z()));
     plane_extracted = plane_extractor.extract(plane_info);
 #endif
+
+    if (!plane_extracted)
+    {
+        std::cout << "ExtractPlaneFailure" << std::endl;
+        if (plane_info.indices_->size() < 5000)
+            std::cout << "ExtractPlaneFailure Inlier Not enough=" << plane_info.indices_->size() << std::endl;
+    }
+
     return plane_extracted;
+
+    //     slam_ros::ScopedTrace tracer("ExtractPlane");
+    //     //color_cb.width() = rgb_image num of rows / cols
+    //     double radius =  2 * (std::min(color_cam_model->imageWidth(), color_cam_model->imageHeight()) / 1.5); // TODO Add parameter
+    //     calibration::PointPlaneExtraction<calibration::PCLPoint3> plane_extractor;
+    //     plane_extractor.setInputCloud(cloud);
+    //     plane_extractor.setRadius(radius);
+    //     bool plane_extracted = false;
+
+    // #if 1
+    //     int r[] = {0, 1, 2};         // TODO Add parameter
+    //     int k[] = {0, 1, -1, 2, -2}; // TODO Add parameter
+    //     for (int i = 0; i < 5 ; ++i)
+    //     {
+    //         for (int j = 0; j < 3 ; ++j)
+    //         {
+    //             plane_extractor.setRadius((1 + r[j]) * radius);
+    //             plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z() + (1 + r[j]) * radius * k[i]));
+    //             plane_extracted = plane_extractor.extract(plane_info);
+    //         }
+    //     }
+    // #else
+    //     plane_extractor.setRadius(2 * radius);
+    //     plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z()));
+    //     plane_extracted = plane_extractor.extract(plane_info);
+    // #endif
+    //     return plane_extracted;
 }
