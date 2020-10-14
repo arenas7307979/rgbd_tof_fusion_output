@@ -121,11 +121,10 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
 
         if (obs_count > 70)
         {
+            rgb_depth_time.erase(rgb_depth_time.begin() + obs_count + 1, rgb_depth_time.end());
             break;
         }
     }
-
-    rgb_depth_time.erase(rgb_depth_time.begin() + obs_count + 1, rgb_depth_time.end());
 
     //Sorting by
     std::cout << "close_to_far size:" << close_to_far.size() << std::endl;
@@ -156,12 +155,9 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
     std::cout << "OptimizeAll End" << std::endl;
 }
 
-
-
 void RGBD_CALIBRATION::OptimizeAll(int obs_num)
 {
     std::cout << "OptimizeAll Start" << std::endl;
-
     ceres::Problem problem;
     Eigen::Matrix<double, Eigen::Dynamic, 7, Eigen::DontAlign | Eigen::RowMajor> data(obs_num, 7); //Twc
     Eigen::Matrix<double, 1, 7, Eigen::DontAlign | Eigen::RowMajor> transform;                     //Tdc
@@ -201,9 +197,11 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
                                              *pcl_frame_vec[timestamp]->estimated_plane_.indices_,
                                              depth_error_function_,
                                              images_size_);
+
         cost_function = new TransformDistortionCostFunction(error,
                                                             ceres::DO_NOT_TAKE_OWNERSHIP,
-                                                            3 *  pcl_frame_vec[timestamp]->cloud_->size());
+                                                            3 * pcl_frame_vec[timestamp]->cloud_->size());
+
         problem.AddResidualBlock(cost_function,
                                  NULL, //new ceres::CauchyLoss(1.0),
                                  transform.data(),
@@ -217,6 +215,7 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
                                                               rgb_frame_vec[timestamp]->x3Dw,
                                                               rgbd_calibration::col, rgbd_calibration::row,
                                                               rgb_frame_vec[timestamp]->uv_distorted);
+
 
         //number of observation uv factor : rgb_frame_vec[timestamp]->x3Dw.size()
         //number of uv-residual: 2(u and v) * rgb_frame_vec[timestamp]->x3Dw.size()
@@ -259,30 +258,38 @@ void RGBD_CALIBRATION::OptimizeAll(int obs_num)
     const int MIN_DEGREE = calibration::MathTraits<calibration::GlobalPolynomial>::MinDegree;
     const int SIZE = DEGREE - MIN_DEGREE + 1;
     typedef calibration::MathTraits<calibration::GlobalPolynomial>::Coefficients Coefficients;
-#if 0
-  GlobalPolynomial p1(global_matrix_->model()->polynomial(0, 0));
-  GlobalPolynomial p2(global_matrix_->model()->polynomial(0, 1));
-  GlobalPolynomial p3(global_matrix_->model()->polynomial(1, 0));
 
-    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic> A(SIZE, SIZE);
-  Eigen::Matrix<Scalar, Eigen::Dynamic, 1> b(SIZE, 1);
-  for (int i = 0; i < SIZE; ++i)
-  {
-    Scalar x(i + 1);
-    Scalar y = p2.evaluate(x) + p3.evaluate(x) - p1.evaluate(x);
-    Scalar tmp(1.0);
-    for (int j = 0; j < MIN_DEGREE; ++j)
-      tmp *= x;
-    for (int j = 0; j < SIZE; ++j)
+#if 1
+    calibration::GlobalPolynomial p1(global_matrix_->model()->polynomial(0, 0));
+    calibration::GlobalPolynomial p2(global_matrix_->model()->polynomial(0, 1));
+    calibration::GlobalPolynomial p3(global_matrix_->model()->polynomial(1, 0));
+
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> A(SIZE, SIZE);
+    Eigen::Matrix<double, Eigen::Dynamic, 1> b(SIZE, 1);
+    for (int i = 0; i < SIZE; ++i)
     {
-      A(i, j) = tmp;
-      tmp *= x;
+        double x(i + 1);
+        double y = p2.evaluate(x) + p3.evaluate(x) - p1.evaluate(x);
+        double tmp(1.0);
+        for (int j = 0; j < MIN_DEGREE; ++j)
+            tmp *= x;
+        for (int j = 0; j < SIZE; ++j)
+        {
+            A(i, j) = tmp;
+            tmp *= x;
+        }
+        b[i] = y;
     }
-    b[i] = y;
-  }
 
-  Eigen::Matrix<Scalar, Eigen::Dynamic, 1> x = A.colPivHouseholderQr().solve(b);
-  global_matrix_->model()->polynomial(1, 1) = x;
+    Eigen::Matrix<double, Eigen::Dynamic, 1> x = A.colPivHouseholderQr().solve(b);
+    global_matrix_->model()->polynomial(1, 1) = x;
+    calibration::GlobalPolynomial p4(global_matrix_->model()->polynomial(1, 1));
+
+    std::cout << "p1 poly = " << p1.coefficients() << std::endl;
+    std::cout << "p2 poly = " << p2.coefficients() << std::endl;
+    std::cout << "p3 poly = " << p3.coefficients() << std::endl;
+    std::cout << "p4 poly = " << p4.coefficients() << std::endl;
+
 #endif
 }
 
@@ -340,8 +347,8 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
 #if 1
     for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
     {
-#pragma omp parallel for schedule(static, 1)
-        for (int th = 0; th < max_threads_; ++th)
+        int th = 0 ;
+        // for (int th = 0; th < max_threads_; ++th)
         {
             if (i + th >= close_to_far.size())
                 continue;
@@ -355,9 +362,9 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
             Eigen::Vector3d chessboard_ori_to_depthcam1(rgb_frame_vec[timestamp]->x3Dw[1].x,
                                                         rgb_frame_vec[timestamp]->x3Dw[1].y,
                                                         rgb_frame_vec[timestamp]->x3Dw[1].z);
-            Eigen::Vector3d chessboard_ori_to_depthcam2(rgb_frame_vec[timestamp]->x3Dw[6].x,
-                                                        rgb_frame_vec[timestamp]->x3Dw[6].y,
-                                                        rgb_frame_vec[timestamp]->x3Dw[6].z);
+            Eigen::Vector3d chessboard_ori_to_depthcam2(rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].x,
+                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].y,
+                                                        rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].z);
 
             chessboard_ori_to_depthcam = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
             chessboard_ori_to_depthcam1 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam1;
@@ -389,6 +396,7 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
             calibration::PlaneInfo plane_info;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
+                std::cout << "EstimateGlobalModel ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
                 if (plane_info.indices_->size() > 200)
                 {
                     pcl_frame_vec[timestamp]->estimated_plane_ = plane_info;
@@ -396,7 +404,6 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
                     pcl_frame_vec[timestamp]->plane_extracted_ = true;
                 }
 
-#pragma omp critical
                 {
                     calibration::Indices reduced = *plane_info.indices_;
                     std::random_shuffle(reduced.begin(), reduced.end());
@@ -438,11 +445,10 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
     int h = model_depth_cam->imageHeight();
     for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
     {
-        if (i > 30)
-            break;
-
-#pragma omp parallel for schedule(static, 1)
-        for (int th = 0; th < max_threads_; ++th)
+        // if (i > 30)
+        //     break;
+        // for (int th = 0; th < max_threads_; ++th)
+        int th = 0;
         {
             if (i + th >= close_to_far.size())
                 continue;
@@ -461,7 +467,6 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
             und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
 
 //correct center x3Ddepth from checkboard project to depth cam
-#pragma omp critical
             if (global_update)
             {
                 calibration::Point3 und_color_cb_center_tmp;
@@ -477,7 +482,6 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
             }
 
 //correct pcl undistoration
-#pragma omp critical
             if (local_update)
             {
                 calibration::LocalMatrixPCL local(local_fit_->model());
@@ -487,8 +491,7 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
             calibration::PlaneInfo plane_info;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
-                std::cout << "plane_info indices=" << plane_info.indices_->size() << std::endl;
-
+                std::cout << "EstimateLocalModelReverse ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
                 //indices info from current extraction plane of inliers --> plane_info
                 //indices only for current fitted_plane
                 boost::shared_ptr<std::vector<int>> indices = boost::make_shared<std::vector<int>>(); // = *plane_info.indices_;
@@ -507,7 +510,6 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
 
                 //old_indices infor from idx of inliner for EstimateLocalModelPlane result(old)
                 boost::shared_ptr<std::vector<int>> old_indices;
-#pragma omp critical
                 {
                     old_indices = plane_info_map_[timestamp].indices_;
                 }
@@ -516,7 +518,6 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
                 std::set_union(old_indices->begin(), old_indices->end(), plane_info.indices_->begin(), plane_info.indices_->end(), 
                 std::back_inserter(*indices));
 
-#pragma omp critical
                 {
                     local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *indices);
                     local_fit_->addAccumulatedPoints(fitted_plane);
@@ -526,7 +527,7 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
         }
         //There is a table of the same size as the image in local_fit_
         //and each coordinate in the table corresponds to a polynomial(second order) for correction function
-        std::cout << "===EstimateLocalModelReverse local_fit_ opt start===" <<std::endl;
+        std::cout << "===EstimateLocalModelReverse local_fit_===" <<std::endl;
         local_fit_->update();
     }
 }
@@ -542,12 +543,8 @@ void RGBD_CALIBRATION::EstimateLocalModel()
     for (size_t i = 0; i < close_to_far.size(); i += max_threads_)
     {
         bool extract_plane_sucess = false;
-        if(i > 30)
-            break;
-#pragma omp parallel for schedule(static, 1)
-        for (int th = 0; th < max_threads_; ++th)
+        int th = 0;
         {
-            std::cout << "111" <<std::endl;
             if (i + th >= close_to_far.size())
                 continue;
 
@@ -559,17 +556,13 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                                                            rgb_frame_vec[timestamp]->x3Dw.back().z);
             Eigen::Vector3d proj_center_chess_to_depthCam = (chessboard_ori_mid_to_depthcam / 2);
 
-            std::cout << "222" <<std::endl;
             proj_center_chess_to_depthCam = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * proj_center_chess_to_depthCam;
             // Extract plane from undistorted cloud(pcl_frame_vec[timestamp])
             boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>> und_cloud;
             und_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*pcl_frame_vec[timestamp]->cloud_);
-            std::cout << "333=" << pcl_frame_vec[timestamp]->cloud_->size() <<std::endl;
-//correct center x3Ddepth from checkboard project to depth cam
-#pragma omp critical
+            //correct center x3Ddepth from checkboard project to depth cam
             if (global_update)
             {
-                std::cout << "444" <<std::endl;
                 calibration::Point3 und_color_cb_center_tmp;
                 und_color_cb_center_tmp.x() = proj_center_chess_to_depthCam.x();
                 und_color_cb_center_tmp.y() = proj_center_chess_to_depthCam.y();
@@ -580,25 +573,20 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 proj_center_chess_to_depthCam.x() = und_color_cb_center_tmp.x();
                 proj_center_chess_to_depthCam.y() = und_color_cb_center_tmp.y();
                 proj_center_chess_to_depthCam.z() = und_color_cb_center_tmp.z();
-
-                std::cout << "proj_center_chess_to_depthCam=" << proj_center_chess_to_depthCam << std::endl;
             }
 
-//correct pcl undistoration
-#pragma omp critical
+            //correct pcl undistoration
             if (local_update)
             {
-                std::cout << "555" << std::endl;
                 calibration::LocalMatrixPCL local(local_fit_->model());
                 local.undistort(*und_cloud);
-                std::cout << "666" << std::endl;
             }
             calibration::PlaneInfo plane_info;
-            std::cout << "new7" << und_cloud->size() <<std::endl;
             if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             // if (ExtractPlane(model_rgb_cam, und_cloud, proj_center_chess_to_depthCam, plane_info))
             {
-                extract_plane_sucess  = true;
+                std::cout << "EstimateLocalModel ExtractPlaneInliers=" << plane_info.indices_->size() << std::endl;
+                extract_plane_sucess = true;
                 plane_info_map_[timestamp] = plane_info;
                 std::vector<int> indices; // = *plane_info.indices_;
                 indices.reserve(plane_info.indices_->size());
@@ -614,35 +602,13 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                 calibration::Plane fitted_plane =
                     calibration::PlaneFit<double>::fit(calibration::PCLConversion<double>::toPointMatrix(*pcl_frame_vec[timestamp]->cloud_, indices));
                 plane_info_map_[timestamp].plane_ = fitted_plane;
-//plane params
-#if DEBUG
-                for (int g = 0; g < 30; ++g)
-                {
-                    auto &p = pcl_frame_vec[timestamp]->points[indices[g * 500]];
-                    std::cout << "p= " << p << std::endl;
-                    Eigen::Vector3d p_eigen(p.x, p.y, p.z);
-                    Eigen::Vector3d nonrmal_plane(fitted_plane.normal()[0],
-                                                  fitted_plane.normal()[1],
-                                                  fitted_plane.normal()[2]);
 
-                    Eigen::Vector3d fitted_plane_test(plane_info.plane_.normal()[0],
-                                                      plane_info.plane_.normal()[1],
-                                                      plane_info.plane_.normal()[2]);
 
-                    double res = p_eigen.transpose().dot(nonrmal_plane) + fitted_plane.offset();
-                    double res2 = p_eigen.transpose().dot(fitted_plane_test) + plane_info.plane_.offset();
-                    std::cout << "res=" << res << std::endl;
-                    std::cout << "res2=" << res2 << std::endl;
-                }
-#endif
                 // std:;cout << "params fitted_plane.offset=" << fitted_plane.offset <<std::endl;
 
-#pragma omp critical
                 {
-                    std::cout << "new11" << std::endl;
                     local_fit_->accumulateCloud(*pcl_frame_vec[timestamp]->cloud_, *plane_info.indices_);
                     local_fit_->addAccumulatedPoints(fitted_plane);
-                    std::cout << "new12" << std::endl;
                     //Due to Td_c extrinsic parameters error, not every points from calibration board projected onto
                     //depth camera coordinates is not on the pcl fitting plane,
                     //so we create a polynomial to correct this problem
@@ -661,6 +627,7 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                     if (i + th > 20)
                     {
                         inverse_global_fit_->update();
+                        global_update = true;
                         std::cout << "global correcting0 = " << inverse_global_fit_->model()->polynomial(0, 0).data()[0] << std::endl;
                         std::cout << "global correcting1 = " << inverse_global_fit_->model()->polynomial(0, 0).data()[1] << std::endl;
                         std::cout << "global correcting2 = " << inverse_global_fit_->model()->polynomial(0, 0).data()[2] << std::endl;
@@ -673,11 +640,9 @@ void RGBD_CALIBRATION::EstimateLocalModel()
 
         if (extract_plane_sucess)
         {
-            std::cout << "=== EstimateLocalModel local_fit_ opt start===" << std::endl;
             local_fit_->update();
+            local_update = true;
         }
-        local_update = true;
-        global_update = true;
     }
 }
 
@@ -711,6 +676,5 @@ bool RGBD_CALIBRATION::ExtractPlane(CameraPtr color_cam_model,
     plane_extractor.setPoint(calibration::PCLPoint3(center.x(), center.y(), center.z()));
     plane_extracted = plane_extractor.extract(plane_info);
 #endif
-
     return plane_extracted;
 }

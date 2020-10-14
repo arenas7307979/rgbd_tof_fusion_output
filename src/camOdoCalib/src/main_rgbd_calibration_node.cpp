@@ -23,6 +23,10 @@
 #include <sensor_msgs/image_encodings.h>
 #include <cv_bridge/cv_bridge.h>
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_conversions/pcl_conversions.h>
+
 #include "rgbd_calibration.h"
 
 
@@ -57,6 +61,8 @@ class RGBDCalibrationNode
 public:
   RGBDCalibrationNode(ros::NodeHandle &pr_nh)
   {
+    depth_pub_ = pr_nh.advertise<sensor_msgs::PointCloud2>("/calibration/depth_cloud", 10);
+
     std::string config_file_depth, config_file_rgb;
     GetParam("/calibration/config_file_depth", config_file_depth);
     GetParam("/calibration/config_file_rgb", config_file_rgb);
@@ -105,13 +111,16 @@ public:
     frame_index++;
     m_buf.lock();
 
+    bool color_image = false;
+
     //decode rgb or gray image
-    cv::Mat mono_img, depth_img;
+    cv::Mat mono_img, depth_img, rgb_img;
     double timestamp = img_msg->header.stamp.toSec();
     if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 || img_msg->encoding == sensor_msgs::image_encodings::RGB8)
     {
+      color_image = true;
       //rgb image
-      cv::Mat rgb_img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
+      rgb_img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
       cv::cvtColor(rgb_img, mono_img, CV_BGR2GRAY);
     }
     else if(img_msg->encoding == sensor_msgs::image_encodings::MONO8 || img_msg->encoding == sensor_msgs::image_encodings::TYPE_8UC1)
@@ -125,9 +134,22 @@ public:
       exit(-1);
     }
 
+
+    cv::Mat bgr[3]; //destination array
+    if (color_image == true)
+    {
+      cv::split(rgb_img, bgr); //split source
+    }
+    else
+    {
+      bgr[0] = mono_img;
+      bgr[1] = mono_img;
+      bgr[2] = mono_img;
+    }
     //decode depth images
     //convert to image to gray and depth image to TYPE_16UC1
     double depth_scaling_factor_ = 1000.0;
+    double inv_depth_scaling_factor =  0.001;
     /* get depth image */
     cv_bridge::CvImagePtr cv_ptr;
     cv_ptr = cv_bridge::toCvCopy(depth_msg, depth_msg->encoding);
@@ -137,13 +159,18 @@ public:
     }
     cv_ptr->image.copyTo(depth_img);
     std::shared_ptr<PCLCloud3> cloud = std::make_shared<PCLCloud3>(camera_depth->imageWidth(), camera_depth->imageHeight());
+
+    pcl::PointCloud<pcl::PointXYZRGB> cloud_calibration;
+
+
     int pcl_num = 0;
     //convert depth img to pcl type
     for (int j = 0; j < camera_depth->imageHeight(); ++j)
     {
       for (int k = 0; k < camera_depth->imageWidth(); ++k)
       {
-        float depth = depth_img.at<uint16_t>(j, k) * 0.001; //(y,x) convert to meter
+        float depth = (depth_img.at<uint16_t>(j, k)) * inv_depth_scaling_factor; //(y,x) convert to meter
+        
         if (depth < 0.05)
           depth = 0;
         else
@@ -154,20 +181,37 @@ public:
         Pc = Pc * depth;
 
         cloud->at(k, j).x = Pc.x(); //Xc in depth cam
-        cloud->at(k, j).y = Pc.y(); //Yc in depth cam 
+        cloud->at(k, j).y = Pc.y(); //Yc in depth cam
         cloud->at(k, j).z = Pc.z(); //Zc in depth cam
+
+        pcl::PointXYZRGB pt;
+        pt.x = Pc.x();
+        pt.y = Pc.y();
+        pt.z = Pc.z();
+        pt.b = bgr[0].at<uchar>(j, k);
+        pt.g = bgr[1].at<uchar>(j, k);
+        pt.r = bgr[2].at<uchar>(j, k);
+        cloud_calibration.push_back(pt);
       }
     }
+
+    cloud_calibration.width = cloud_calibration.points.size();
+    cloud_calibration.height = 1;
+    cloud_calibration.is_dense = true;
+    sensor_msgs::PointCloud2 cloud_msg;
+    pcl::toROSMsg(cloud_calibration, cloud_msg);
+    cloud_msg.header.frame_id = "map";
+    depth_pub_.publish(cloud_msg);
 
     if (pcl_num < 50)
     {
       m_buf.unlock();
       return;
     }
-    // std::cout << cloud->points.size() <<std::endl;
-    // std::cout << cloud->points.size() <<std::endl;
 
-    rgb_depth_time.push_back(std::tuple<cv::Mat,  std::shared_ptr<PCLCloud3>, double>(mono_img, cloud, timestamp));
+    std::cout << "cloud->at(k, j).z =" << cloud->at(camera_depth->imageWidth()*0.5, camera_depth->imageHeight()*0.5).z  <<std::endl;
+    rgb_depth_time.push_back(std::tuple<cv::Mat,  std::shared_ptr<PCLCloud3>, double>(mono_img, cloud, obs_frame_count));
+    obs_frame_count++;
     m_buf.unlock();
   }
 
@@ -225,13 +269,14 @@ public:
 
 private:
   //threading init
-   std::unique_ptr<ThreadPool> threading_pool_opt;
-
+  // std::unique_ptr<ThreadPool> threading_pool_opt;
+  ros::Publisher depth_pub_;
   CameraPtr camera_rgb, camera_depth;
   Sophus::SE3d Tdepth_rgb;
   RGBD_CALIBRATIONPtr rgbd_calibr;
   int frame_index = 0;
   int tmp_data_size = 0;
+  double obs_frame_count = 0;
 };
 
 int main(int argc, char **argv)

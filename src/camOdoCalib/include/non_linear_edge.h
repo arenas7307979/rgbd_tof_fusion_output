@@ -236,8 +236,6 @@ public:
     calibration::Polynomial<T, 2> depth_error_function(depth_error_function_.coefficients().cast<T>());
     typename calibration::Types<T>::Plane cb_plane = calibration::Types<T>::Plane::Through(cb_corners(0, 0), cb_corners(0, 1), cb_corners(1, 0));
 
-    std::cout << "plane_indices_.size()=" << plane_indices_.size() << std::endl;
-
     Eigen::Map<Eigen::Matrix<T, 3, Eigen::Dynamic>> residual_map_dist(residuals, 3, plane_indices_.size()); //3 row n col
 
     for (calibration::Size1 i = 0; i < plane_indices_.size(); ++i)
@@ -250,7 +248,7 @@ public:
         // std::cout << "epth_points[plane_indices_[i]])=" << depth_points[plane_indices_[i]] << std::endl;
         // std::cout << "depth input =" << depth_points[plane_indices_[i]].z() << std::endl;
         // std::cout << "depth ouput=" << ceres::poly_eval(depth_error_function.coefficients(), depth_points[plane_indices_[i]].z()) << std::endl;
-#if 1
+#if 0
         residual_map_dist.col(i) = (line.intersectionPoint(cb_plane) - depth_points[plane_indices_[i]]) /
                                    (std::sqrt(T(plane_indices_.size())) *
                                     ceres::poly_eval(depth_error_function.coefficients(),

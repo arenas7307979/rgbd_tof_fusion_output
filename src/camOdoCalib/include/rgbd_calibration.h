@@ -2,7 +2,7 @@
 #define RGBD_CALIBRATION_H
 #endif
 
-
+#define DEBUG_PCL_SHOW 1
 #define DEBUG 0
 
 #include <stdio.h>
@@ -39,8 +39,7 @@
 #include <pcl/registration/icp.h>
 #include <pcl/common/io.h>
 #include <sensor_msgs/PointCloud2.h>
-
-#include "ThreadPool.h"
+#include <pcl_conversions/pcl_conversions.h>
 
 // PCL
 typedef pcl::PointCloud<pcl::PointXYZ>  PCLCloud3;       ///< 3D pcl PointCloud.
@@ -128,9 +127,6 @@ private:
                       calibration::PlaneInfo &plane_info);
     void OptimizeAll(int obs_num);
     int max_threads_ = 4;
-
-    //thread pool
-    std::unique_ptr<ThreadPool> threading_pool_opt;
 
     std::map<double, RGBFramePtr> rgb_frame_vec;
     std::map<double, DepthFramePtr> pcl_frame_vec;

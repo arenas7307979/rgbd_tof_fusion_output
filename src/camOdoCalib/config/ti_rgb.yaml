@@ -1,0 +1,16 @@
+%YAML:1.0
+---
+camera_name: camera_rgb
+model_type: PINHOLE
+image_width: 320
+image_height: 240
+projection_parameters:
+   fx: 210.32464205
+   fy: 211.52787424
+   cx: 156.88649626
+   cy: 121.64307867
+distortion_parameters:
+   k1: -0.05679636
+   k2: 0.13326651
+   p1: -0.00382498
+   p2: -0.00746527
