@@ -15,11 +15,8 @@ static const float square_size = 0.108; // unit:  m
 
 //threshold for remove larget distance of center of pcl and chessboard.
 static const float diff_pcl_and_chessboard_center = 0.08;
-
-// static const double chessboard_obs_distance_max = 0.07;
-
 //remove same view (move>0.04 --> obs)
-static const double chessboard_obs_distance_min = 0.04;
+static const double chessboard_obs_distance_max = 0.07;
 
 enum PatternType
 {

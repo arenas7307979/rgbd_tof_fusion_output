@@ -94,8 +94,7 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
             Twc_cur.translation() = twc;
             Twc_cur.setQuaternion(Eigen::Quaterniond(roatation_matrix));
             Sophus::SE3d Tw1_Tw2 = Twc_last.inverse() * Twc_cur;
-            Twc_last = Twc_cur;
-            if (Tw1_Tw2.translation().norm() > rgbd_calibration::chessboard_obs_distance_min )
+            if (Tw1_Tw2.translation().norm() < rgbd_calibration::chessboard_obs_distance_max)
             {
                 bad_idx.push_back(i);
                 std::cout << "no enough(<0.02) / over(>0.06) translation=" << Tw1_Tw2.translation().norm() << std::endl;
@@ -104,6 +103,7 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         }
 #endif
 
+        Twc_last = Twc_cur;
         //check id has
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
         cur_rgb_info->uv_distorted = uv_2d_distorted;
