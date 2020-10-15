@@ -8,10 +8,19 @@
 namespace rgbd_calibration
 {
 
+//chessboard info
 static const int col = 6;
 static const int row = 5;
 static const float square_size = 0.108; // unit:  m
-static const double chessboard_obs_distance = 0.03;
+
+//threshold for remove larget distance of center of pcl and chessboard.
+static const float diff_pcl_and_chessboard_center = 0.08;
+
+// static const double chessboard_obs_distance_max = 0.07;
+
+//remove same view (move>0.04 --> obs)
+static const double chessboard_obs_distance_min = 0.04;
+
 enum PatternType
 {
     APRIL,

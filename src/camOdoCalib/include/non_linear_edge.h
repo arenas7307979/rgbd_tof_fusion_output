@@ -248,7 +248,7 @@ public:
         // std::cout << "epth_points[plane_indices_[i]])=" << depth_points[plane_indices_[i]] << std::endl;
         // std::cout << "depth input =" << depth_points[plane_indices_[i]].z() << std::endl;
         // std::cout << "depth ouput=" << ceres::poly_eval(depth_error_function.coefficients(), depth_points[plane_indices_[i]].z()) << std::endl;
-#if 0
+#if 1
         residual_map_dist.col(i) = (line.intersectionPoint(cb_plane) - depth_points[plane_indices_[i]]) /
                                    (std::sqrt(T(plane_indices_.size())) *
                                     ceres::poly_eval(depth_error_function.coefficients(),

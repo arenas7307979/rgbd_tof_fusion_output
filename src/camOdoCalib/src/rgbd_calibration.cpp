@@ -1,6 +1,8 @@
 #include "rgbd_calibration.h"
 #include "systrace/tracer.h"
 
+static bool myfunction(int i, int j) { return (i < j); }
+
 //Note!!!
 //校正板參數在calcCamPose.h修改
 //Calibration board parameters are modified in calcCamPose.h.
@@ -78,7 +80,8 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
             std::cout << "isCalOk false=" << std::endl;
             continue;
         }
-
+        
+#if 1
         if (init_state)
         {
             Twc_last.translation() = twc;
@@ -92,13 +95,14 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
             Twc_cur.setQuaternion(Eigen::Quaterniond(roatation_matrix));
             Sophus::SE3d Tw1_Tw2 = Twc_last.inverse() * Twc_cur;
             Twc_last = Twc_cur;
-            if (Tw1_Tw2.translation().norm() < 0.05)
+            if (Tw1_Tw2.translation().norm() > rgbd_calibration::chessboard_obs_distance_min )
             {
                 bad_idx.push_back(i);
-                std::cout << "no enough translation=" << Tw1_Tw2.translation().norm() << std::endl;
+                std::cout << "no enough(<0.02) / over(>0.06) translation=" << Tw1_Tw2.translation().norm() << std::endl;
                 continue;
             }
         }
+#endif
 
         //check id has
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
@@ -108,7 +112,32 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
         cur_rgb_info->id_landmark = id_landmark; // 1 landmark_id is consists of 4 uv_point; 22 id_landmark : 88 uv_distorted point
         cur_rgb_info->Twc.translation() = twc;
         cur_rgb_info->Twc.setQuaternion(qwc);
+
         boost::shared_ptr<PCLCloud3> pcl_current = make_shared_ptr(std::get<1>(rgb_depth_time[i]));
+        std::vector<float> center_vec;
+        int u_sample_start = (model_depth_cam->imageWidth() / 2) - 50;
+        int v_sample_start = (model_depth_cam->imageHeight() / 2) - 50;
+        for (int k = 0; k < 50; k++)
+        {
+            for (int m = 0; m < 50; m++)
+            {
+                center_vec.push_back(pcl_current->at(v_sample_start + k, u_sample_start + m).z);
+            }
+        }
+        std::sort(center_vec.begin(), center_vec.end(), myfunction);
+        float middle_depth_center = center_vec[int(center_vec.size() / 2)];
+        // std::cout << "middle_depth_center=" << middle_depth_center <<std::endl;
+
+        Eigen::Vector3d Chessboard_Center = Eigen::Vector3d(x3Dw.back().x, x3Dw.back().y, x3Dw.back().z) / 2;
+        Chessboard_Center = Tdepth_rgb * cur_rgb_info->Twc.inverse() * Chessboard_Center;
+
+        if (std::fabs(Chessboard_Center.z() - middle_depth_center) > rgbd_calibration::diff_pcl_and_chessboard_center)
+        {
+            std::cout << "fabs center proj diff=" << std::fabs(Chessboard_Center.z() - middle_depth_center) << std::endl;
+            std::cout << "pcl and chessboard center have large diff, check init of Tdc OR sensor sync" << std::endl;
+            continue;
+        }
+
         calibration::Pose plane_pose;
         DepthFramePtr cur_depth_info = std::make_shared<DepthFrame>();
 
@@ -428,11 +457,11 @@ void RGBD_CALIBRATION::EstimateLocalModel()
                                                     rgb_frame_vec[timestamp]->x3Dw[j].y,
                                                     rgb_frame_vec[timestamp]->x3Dw[j].z);
 
-                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    Eigen::Vector3d chessboard_x3Dc = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
                     pcl::PointXYZRGB pt;
-                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
-                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
-                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.x = chessboard_x3Dc.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dc.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dc.z(); //Zc in depth cam
                     pt.r = 0;
                     pt.g = 0;
                     pt.b = 255;
@@ -616,11 +645,11 @@ void RGBD_CALIBRATION::EstimateLocalModelReverse()
                                                     rgb_frame_vec[timestamp]->x3Dw[j].y,
                                                     rgb_frame_vec[timestamp]->x3Dw[j].z);
 
-                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    Eigen::Vector3d chessboard_x3Dc = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
                     pcl::PointXYZRGB pt;
-                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
-                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
-                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.x = chessboard_x3Dc.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dc.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dc.z(); //Zc in depth cam
                     pt.r = 0;
                     pt.g = 0;
                     pt.b = 255;
@@ -717,9 +746,9 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
                                                         rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].y,
                                                         rgb_frame_vec[timestamp]->x3Dw[rgbd_calibration::col].z);
 
-            chessboard_ori_to_depthcam = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
-            chessboard_ori_to_depthcam1 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam1;
-            chessboard_ori_to_depthcam2 = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam2;
+            Eigen::Vector3d chessboard_ori_to_depthcam_tmp = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam;
+            Eigen::Vector3d chessboard_ori_to_depthcam1_tmp = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam1;
+            Eigen::Vector3d chessboard_ori_to_depthcam2_tmp = rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_ori_to_depthcam2;
 
             Eigen::Vector3d chessboard_ori_mid_to_depthcam(rgb_frame_vec[timestamp]->x3Dw.back().x,
                                                            rgb_frame_vec[timestamp]->x3Dw.back().y,
@@ -780,11 +809,11 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
                                                     rgb_frame_vec[timestamp]->x3Dw[j].y,
                                                     rgb_frame_vec[timestamp]->x3Dw[j].z);
 
-                    chessboard_x3Dw = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
+                    Eigen::Vector3d chessboard_x3Dd = Tdepth_rgb * rgb_frame_vec[timestamp]->Twc.inverse() * chessboard_x3Dw;
                     pcl::PointXYZRGB pt;
-                    pt.x = chessboard_x3Dw.x(); //Xc in depth cam
-                    pt.y = chessboard_x3Dw.y(); //Yc in depth cam
-                    pt.z = chessboard_x3Dw.z(); //Zc in depth cam
+                    pt.x = chessboard_x3Dd.x(); //Xc in depth cam
+                    pt.y = chessboard_x3Dd.y(); //Yc in depth cam
+                    pt.z = chessboard_x3Dd.z(); //Zc in depth cam
                     pt.r = 0;
                     pt.g = 0;
                     pt.b = 255;
@@ -839,9 +868,9 @@ void RGBD_CALIBRATION::EstimateGlobalModel()
                     global_fit_->addAccumulatedPoints(fitted_plane);
 
                     //ans3:
-                    calibration::Plane plane_from_chessboard = calibration::Plane::Through(chessboard_ori_to_depthcam,
-                                                                                           chessboard_ori_to_depthcam1,
-                                                                                           chessboard_ori_to_depthcam2);
+                    calibration::Plane plane_from_chessboard = calibration::Plane::Through(chessboard_ori_to_depthcam_tmp,
+                                                                                           chessboard_ori_to_depthcam1_tmp,
+                                                                                           chessboard_ori_to_depthcam2_tmp);
                     pcl_frame_vec[timestamp]->checkboard_plane_ = plane_from_chessboard;
 
                     //global_fit_->addAccumulatedPoints(plane_from_chessboard);

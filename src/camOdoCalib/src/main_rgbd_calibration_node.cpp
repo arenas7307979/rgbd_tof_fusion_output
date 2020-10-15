@@ -288,7 +288,7 @@ int main(int argc, char **argv)
   RGBDCalibrationNode rgbd_node(n);
   message_filters::Subscriber<sensor_msgs::Image> sub_img(n, "/cam0/image_raw", 100), 
   sub_depth_img(n, "camera/depth/image_raw", 100);
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
+  typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
   message_filters::Synchronizer<syncPolicy> sync(syncPolicy(10000), sub_img, sub_depth_img);
   sync.registerCallback(boost::bind(&RGBDCalibrationNode::ImageDepthImgCallback, &rgbd_node, _1, _2));
 
