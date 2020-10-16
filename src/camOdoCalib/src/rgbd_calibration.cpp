@@ -100,10 +100,10 @@ void RGBD_CALIBRATION::Optimize(std::vector<std::tuple<cv::Mat, std::shared_ptr<
                 std::cout << "no enough(<0.02) / over(>0.06) translation=" << Tw1_Tw2.translation().norm() << std::endl;
                 continue;
             }
+            Twc_last = Twc_cur;
         }
 #endif
 
-        Twc_last = Twc_cur;
         //check id has
         cur_rgb_info->timestamp = std::get<2>(rgb_depth_time[i]);
         cur_rgb_info->uv_distorted = uv_2d_distorted;
