@@ -1,0 +1,25 @@
+<launch>
+
+<param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/fusion_ti.yaml" type="string"/>
+<param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/fusion_zed.yaml" type="string"/>  
+
+
+<!-- <param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_depth.yaml" type="string"/>
+<param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_rgb.yaml" type="string"/> -->
+
+<!-- initial extrinsic param Tdepth_rgb, pose from rgb cam to depth cam -->
+<param name="/Tdepth_rgb/tx" value="-0.0473584" type="double"/>
+<param name="/Tdepth_rgb/ty" value="0.0544932" type="double"/>
+<param name="/Tdepth_rgb/tz" value="-0.0187574" type="double"/>
+<param name="/Tdepth_rgb/qx" value="0.0141265" type="double"/>
+<param name="/Tdepth_rgb/qy" value="0.02082" type="double"/>
+<param name="/Tdepth_rgb/qz" value="0.002037" type="double"/>
+<param name="/Tdepth_rgb/qw" value="0.999681" type="double"/>
+
+<node pkg="cam_calibration" type="rgbd_chess_check_node" name="rgbd_chess_check" output="screen">
+    <remap from="cam0/image_raw" to="/zed2/zed_node/left/image_rect_color"/>
+    <remap from="camera/confindence/image" to="/vi_confidence_img"/> 
+</node>
+
+<node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/>
+</launch>

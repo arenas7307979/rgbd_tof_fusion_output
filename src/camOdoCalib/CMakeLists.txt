@@ -102,12 +102,14 @@ add_library(calib_lib
 
 target_link_libraries(calc_lib ${catkin_LIBRARIES} ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
-add_executable(cam_odo_cal src/main_node.cpp )
-target_link_libraries(cam_odo_cal calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
+#add_executable(cam_odo_cal src/main_node.cpp )
+#target_link_libraries(cam_odo_cal calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
 
+#add_executable(rgbd_calibration_node src/main_rgbd_calibration_node.cpp )
+#target_link_libraries(rgbd_calibration_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
 
-add_executable(rgbd_calibration_node src/main_rgbd_calibration_node.cpp )
-target_link_libraries(rgbd_calibration_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
+add_executable(rgbd_chess_check_node src/rgbd_chess_check_node.cpp )
+target_link_libraries(rgbd_chess_check_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
 
 #### simulation  ###
 # add_executable(simulate simulateData/main.cpp simulateData/simulateOdoCam.cpp)
