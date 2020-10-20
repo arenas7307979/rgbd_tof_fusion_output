@@ -24,7 +24,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include "rgbd_calibration.h"
-#define opencv_viewer
+#define opencv_viewer 0
 
 template <class T>
 void GetParam(const std::string &param_name, T &param)
@@ -41,7 +41,7 @@ class RGBDCheckerNode
 public:
   RGBDCheckerNode(ros::NodeHandle &pr_nh)
   {
-    depth_pub_ = pr_nh.advertise<sensor_msgs::PointCloud2>("/calibration/depth_cloud", 10);
+    depth_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/tof_to_left", 10);
 
     std::string config_file_depth, config_file_rgb;
     GetParam("/calibration/config_file_depth", config_file_depth);
@@ -50,7 +50,6 @@ public:
     //camera parameter in config folder
     camera_depth = CameraFactory::instance()->generateCameraFromYamlFile(config_file_depth);
     camera_rgb = CameraFactory::instance()->generateCameraFromYamlFile(config_file_rgb);
-    std::vector<double> depthparam, rgb_param;
     //get intrinsic parameter
     depthparam = camera_depth->getK();
     rgb_param = camera_rgb->getK();
@@ -86,10 +85,14 @@ public:
   }
   ~RGBDCheckerNode() {}
 
-  void ImageDepthImgCallback(const sensor_msgs::ImageConstPtr &img_msg, const sensor_msgs::ImageConstPtr &depth_msg)
+  void ImageDepthImgCallback(const sensor_msgs::ImageConstPtr &img_msg,
+                             const sensor_msgs::ImageConstPtr &depth_msg, 
+                             const sensor_msgs::ImageConstPtr &depth_range_msg)
   {
+    // depth_msg is confidence image
+    // depth_range_msg is depth inforamtion.
 
-    if(img_msg == nullptr || depth_msg == nullptr)
+    if(img_msg == nullptr || depth_msg == nullptr || depth_range_msg ==nullptr)
       return;
 
     cv::Mat mono_img, depth_img;
@@ -122,7 +125,50 @@ public:
       depth_img = cv_bridge::toCvShare(depth_msg, "mono8")->image;
     }
 
-#if 1
+    //convert depth_range inforamation
+    cv::Mat depth_range;
+    double depth_scalin_factor = 1000.0;
+    double inv_depth_scalin_factor = 1.0 / depth_scalin_factor;
+    cv_bridge::CvImagePtr depth_range_Ptr;
+    depth_range_Ptr = cv_bridge::toCvCopy(depth_range_msg, depth_range_msg->encoding);
+    if(depth_range_Ptr->encoding == sensor_msgs::image_encodings::TYPE_32FC1){
+      (depth_range_Ptr->image).convertTo(depth_range_Ptr->image, CV_16UC1, depth_scalin_factor);
+    }
+    depth_range_Ptr->image.copyTo(depth_range);
+
+    //project depth image to stereo-left cam
+    cv::Mat cvDepthProjectLeftCam(cv::Size(camera_rgb->imageWidth(), camera_rgb->imageHeight()), CV_16UC1, cv::Scalar(0));
+
+    for (size_t i = 0; i < camera_depth->imageHeight(); i++) //row rmap[0][0].size[0]
+    {
+      for (size_t j = 0; j < camera_depth->imageWidth(); j++) //colum rmap[0][0].size[1]
+      {
+        double depth = double(depth_range.at<uint16_t>(i, j) * inv_depth_scalin_factor);
+        double Xc = ((j - depthparam[2]) / depthparam[0]) * depth;
+        double Yc = ((i - depthparam[3]) / depthparam[1]) * depth;
+        Eigen::Vector3d x3c_left = Tdepth_rgb.inverse() * Eigen::Vector3d(Xc, Yc, depth);
+
+        //reproject to stereo left-cam
+        Eigen::Vector2d depth2left_uv;
+        camera_rgb->spaceToPlane(x3c_left, depth2left_uv);
+        int u_leftcam = int(depth2left_uv.x());
+        int v_leftcam = int(depth2left_uv.y());
+        if (u_leftcam < 0 || v_leftcam < 0 || v_leftcam > camera_rgb->imageHeight()|| u_leftcam > camera_rgb->imageWidth())
+          continue;
+
+        cvDepthProjectLeftCam.at<uint16_t>(v_leftcam, u_leftcam) = depth_range.at<uint16_t>(i, j);
+      }
+    }
+
+    cv_bridge::CvImage cv_ros;
+    cv_ros.header = img_msg->header;
+    cv_ros.header.frame_id = "map";
+    cv_ros.header.seq = 0;
+    //cv_ros.header.stamp = img_msg->header; //microseconds->seconds
+    cv_ros.encoding = "mono16";
+    cv_ros.image = cvDepthProjectLeftCam;
+    depth_pub_.publish(cv_ros);
+#if opencv_viewer
     Eigen::Matrix4d Twc_mono;
     std::vector<cv::Point3f> x3Dw_mono;
     std::vector<cv::Point2f> uv_2d_distorted_mono;
@@ -158,7 +204,7 @@ public:
     cv::imshow("rgb_instrinsic", debug_img);
 #endif
 
-#if 1
+#if opencv_viewer
    //Project Xw to "Confidence image" to check instrinsic value
     Eigen::Matrix4d Twc_depth;
     std::vector<cv::Point3f> x3Dw_depth;
@@ -207,10 +253,9 @@ public:
       }
     }
     cv::imshow("prej_ext_debug_img", ext_debug_img);
+    cv::waitKey(2);
 #endif
 
-
-    cv::waitKey(2);
     frame_index++;
   }
 
@@ -224,6 +269,7 @@ private:
   int frame_index = 0;
   int tmp_data_size = 0;
   double obs_frame_count = 0;
+  std::vector<double> depthparam, rgb_param;
 };
 
 int main(int argc, char **argv)
@@ -234,10 +280,11 @@ int main(int argc, char **argv)
 
   RGBDCheckerNode rgbd_node(n);
   message_filters::Subscriber<sensor_msgs::Image> sub_img(n, "cam0/image_raw", 100),
-      sub_depth_img(n, "camera/confindence/image", 100);
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
-  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(10000), sub_img, sub_depth_img);
-  sync.registerCallback(boost::bind(&RGBDCheckerNode::ImageDepthImgCallback, &rgbd_node, _1, _2));
+      sub_confidence_img(n, "camera/confindence/image", 100),
+      sub_depth_img(n, "camera/depth/image", 100);
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
+  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(10000), sub_img, sub_confidence_img, sub_depth_img);
+  sync.registerCallback(boost::bind(&RGBDCheckerNode::ImageDepthImgCallback, &rgbd_node, _1, _2, _3));
 
   //the following three rows are to run the calibrating project through playing bag package
   // ros::Subscriber sub_imu = n.subscribe(WHEEL_TOPIC, 500, wheel_callback, ros::TransportHints().tcpNoDelay());

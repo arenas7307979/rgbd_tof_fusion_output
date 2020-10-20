@@ -18,7 +18,8 @@
 
 <node pkg="cam_calibration" type="rgbd_chess_check_node" name="rgbd_chess_check" output="screen">
     <remap from="cam0/image_raw" to="/zed2/zed_node/left/image_rect_color"/>
-    <remap from="camera/confindence/image" to="/vi_confidence_img"/> 
+    <remap from="camera/depth/image" to="/vi_processed_depth_img"/> 
+    <remap from="camera/confindence/image" to="/vi_confidence_img"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/>
