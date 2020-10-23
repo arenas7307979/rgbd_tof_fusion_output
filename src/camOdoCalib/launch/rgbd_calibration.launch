@@ -1,33 +1,20 @@
 <launch>
-
-<param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/ti_depth.yaml" type="string"/>
-<param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/ti_rgb.yaml" type="string"/>  
-
-
-<!-- <param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_depth.yaml" type="string"/>
-<param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_rgb.yaml" type="string"/> -->
+<param name="/calibration/config_file_depth" value="/datasets/CamOdomCalibraTool/src/camOdoCalib/config/depth.yaml" type="string"/>
+<param name="/calibration/config_file_rgb" value="/datasets/CamOdomCalibraTool/src/camOdoCalib/config/rgb.yaml" type="string"/>
 
 <!-- initial extrinsic param Tdepth_rgb, pose from rgb cam to depth cam -->
-<param name="/Tdepth_rgb/tx" value="0.0" type="double"/>
-<param name="/Tdepth_rgb/ty" value="0.0" type="double"/>
-<param name="/Tdepth_rgb/tz" value="0.0" type="double"/>
+<param name="/Tdepth_rgb/tx" value="0" type="double"/>
+<param name="/Tdepth_rgb/ty" value="0" type="double"/>
+<param name="/Tdepth_rgb/tz" value="0" type="double"/>
 <param name="/Tdepth_rgb/qx" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qy" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qz" value="0.0" type="double"/>
 <param name="/Tdepth_rgb/qw" value="1.0" type="double"/>
 
-<node pkg="cam_calibration" type="rgbd_calibration_node" name="rgbd_calibration" output="screen" launch-prefix="xterm -e gdb -ex run --args ">
-    <!-- <remap from="/cam0/image_raw" to="/camera/color/image_raw"/>
-    <remap from="/camera/depth/image_raw" to="/camera/aligned_depth_to_color/image_raw"/>
-    <remap from="/imu0" to="/camera/imu"/> -->
-
-    <remap from="/cam0/image_raw" to="/vi_distorted_rgb_img"/>
-    <remap from="camera/depth/image_raw" to="/vi_processed_depth_img"/> 
-    <!-- <remap from="camera/depth/image_raw" to="/vi_processed_depth_img"/>  -->
-
-    <!-- <remap from="/cam0/image_raw" to="/camera/color/image_raw"/>
-    <remap from="camera/depth/image_raw" to="/camera/depth/image_rect_raw"/>  -->
+<node pkg="cam_calibration" type="rgbd_calibration_node" name="rgbd_calibration" output="screen">
+    <remap from="/cam0/image_raw" to="/vi_undistorted_rgb_img"/>
+    <remap from="camera/depth/image_raw" to="/vi_processed_depth_img"/>
 </node>
 
-<node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/>
+<node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/> 
 </launch>

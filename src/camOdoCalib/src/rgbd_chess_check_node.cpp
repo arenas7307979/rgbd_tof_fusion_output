@@ -24,7 +24,9 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include "rgbd_calibration.h"
-#define opencv_viewer 0
+// #include "two_image_calibration.h"
+#define opencv_viewer 1
+#define NotOny_Publish_Color 1
 
 template <class T>
 void GetParam(const std::string &param_name, T &param)
@@ -41,7 +43,10 @@ class RGBDCheckerNode
 public:
   RGBDCheckerNode(ros::NodeHandle &pr_nh)
   {
-    depth_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/tof_to_left", 10);
+    depth_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/tof_to_left", 1);
+    reproj_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/reproj_debug", 1);
+    sync_stereoL_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/sync_left_gray_img", 1);
+    sync_tof_mono_pub = pr_nh.advertise<sensor_msgs::Image>("/project/sync_tof_gray_img", 1);
 
     std::string config_file_depth, config_file_rgb;
     GetParam("/calibration/config_file_depth", config_file_depth);
@@ -73,6 +78,7 @@ public:
     Tdepth_rgb.translation().y() = y;
     Tdepth_rgb.translation().z() = z;
     Tdepth_rgb.setQuaternion(Eigen::Quaterniond(qw, qx, qy, qz));
+    Tdepth_rgb = Tdepth_rgb.inverse();
     // std::cout << "Tdepth_rgb translation: " << Tdepth_rgb.translation() << std::endl;
     // std::cout << "Tdepth_unit_quaternion: " << Tdepth_rgb.so3().unit_quaternion().coeffs() << std::endl;
     // Tdepth_rgb = Tdepth_rgb.inverse();
@@ -85,39 +91,57 @@ public:
   }
   ~RGBDCheckerNode() {}
 
+  //img_msg color image(stereo left)
+  // depth_msg is confidence image
+  // depth_range_msg is depth inforamtion.
   void ImageDepthImgCallback(const sensor_msgs::ImageConstPtr &img_msg,
-                             const sensor_msgs::ImageConstPtr &depth_msg, 
+                             const sensor_msgs::ImageConstPtr &depth_msg,
                              const sensor_msgs::ImageConstPtr &depth_range_msg)
   {
-    // depth_msg is confidence image
-    // depth_range_msg is depth inforamtion.
-
-    if(img_msg == nullptr || depth_msg == nullptr || depth_range_msg ==nullptr)
+    if (img_msg == nullptr || depth_msg == nullptr || depth_range_msg == nullptr)
       return;
 
     cv::Mat mono_img, depth_img;
     double timestamp = img_msg->header.stamp.toSec();
-    if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 || 
-    img_msg->encoding == sensor_msgs::image_encodings::RGB8 || 
-    img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+    if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
+        img_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
+        img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
     {
       //rgb image
       cv::Mat rgb_img;
-      rgb_img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
-      cv::cvtColor(rgb_img, mono_img, CV_BGR2GRAY);
+      if (img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+      {
+        rgb_img = cv_bridge::toCvShare(img_msg, "bgra8")->image;
+        cv::cvtColor(rgb_img, mono_img, CV_BGRA2GRAY);
+      }
+      else
+      {
+        rgb_img = cv_bridge::toCvShare(img_msg, "bgr8")->image;
+        cv::cvtColor(rgb_img, mono_img, CV_BGR2GRAY);
+      }
     }
     else if (img_msg->encoding == sensor_msgs::image_encodings::MONO8 || img_msg->encoding == sensor_msgs::image_encodings::TYPE_8UC1)
     {
       //gray image
       mono_img = cv_bridge::toCvShare(img_msg, "mono8")->image;
     }
-    if (depth_msg->encoding == sensor_msgs::image_encodings::BGR8 || depth_msg->encoding == sensor_msgs::image_encodings::RGB8)
-    {
 
+    if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
+        img_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
+        img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+    {
       //rgb image
       cv::Mat rgb_img;
-      rgb_img = cv_bridge::toCvShare(depth_msg, "bgr8")->image;
-      cv::cvtColor(rgb_img, depth_img, CV_BGR2GRAY);
+      if (img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+      {
+        rgb_img = cv_bridge::toCvShare(depth_msg, "bgra8")->image;
+        cv::cvtColor(rgb_img, depth_img, CV_BGRA2GRAY);
+      }
+      else
+      {
+        rgb_img = cv_bridge::toCvShare(depth_msg, "bgr8")->image;
+        cv::cvtColor(rgb_img, depth_img, CV_BGR2GRAY);
+      }
     }
     else if (depth_msg->encoding == sensor_msgs::image_encodings::MONO8 || depth_msg->encoding == sensor_msgs::image_encodings::TYPE_8UC1)
     {
@@ -125,13 +149,34 @@ public:
       depth_img = cv_bridge::toCvShare(depth_msg, "mono8")->image;
     }
 
+    cv_bridge::CvImage cv_ros_stereo_gray;
+    cv_ros_stereo_gray.header = img_msg->header;
+    cv_ros_stereo_gray.header.frame_id = "map";
+    cv_ros_stereo_gray.header.seq = 0;
+    //cv_ros.header.stamp = img_msg->header; //microseconds->seconds
+    cv_ros_stereo_gray.encoding = "mono8";
+    cv_ros_stereo_gray.image = mono_img;
+    sync_stereoL_pub_.publish(cv_ros_stereo_gray);
+
+    cv_bridge::CvImage cv_ros_tof_gray;
+    cv_ros_tof_gray.header = img_msg->header;
+    cv_ros_tof_gray.header.frame_id = "map";
+    cv_ros_tof_gray.header.seq = 0;
+    //cv_ros.header.stamp = img_msg->header; //microseconds->seconds
+    cv_ros_tof_gray.encoding = "mono8";
+    cv_ros_tof_gray.image = depth_img;
+    sync_tof_mono_pub.publish(cv_ros_tof_gray);
+
+
+#if NotOny_Publish_Color
     //convert depth_range inforamation
     cv::Mat depth_range;
     double depth_scalin_factor = 1000.0;
     double inv_depth_scalin_factor = 1.0 / depth_scalin_factor;
     cv_bridge::CvImagePtr depth_range_Ptr;
     depth_range_Ptr = cv_bridge::toCvCopy(depth_range_msg, depth_range_msg->encoding);
-    if(depth_range_Ptr->encoding == sensor_msgs::image_encodings::TYPE_32FC1){
+    if (depth_range_Ptr->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
+    {
       (depth_range_Ptr->image).convertTo(depth_range_Ptr->image, CV_16UC1, depth_scalin_factor);
     }
     depth_range_Ptr->image.copyTo(depth_range);
@@ -144,16 +189,20 @@ public:
       for (size_t j = 0; j < camera_depth->imageWidth(); j++) //colum rmap[0][0].size[1]
       {
         double depth = double(depth_range.at<uint16_t>(i, j) * inv_depth_scalin_factor);
-        double Xc = ((j - depthparam[2]) / depthparam[0]) * depth;
-        double Yc = ((i - depthparam[3]) / depthparam[1]) * depth;
-        Eigen::Vector3d x3c_left = Tdepth_rgb.inverse() * Eigen::Vector3d(Xc, Yc, depth);
+        // double Xc = ((j - depthparam[2]) / depthparam[0]) * depth;
+        // double Yc = ((i - depthparam[3]) / depthparam[1]) * depth;
+        Eigen::Vector3d x3c_left;
+        Eigen::Vector2d depth_uv(j, i);
+        camera_depth->liftProjective(depth_uv, x3c_left);
+        x3c_left = x3c_left * depth;
+        x3c_left = Tdepth_rgb.inverse() * x3c_left;
 
         //reproject to stereo left-cam
         Eigen::Vector2d depth2left_uv;
         camera_rgb->spaceToPlane(x3c_left, depth2left_uv);
         int u_leftcam = int(depth2left_uv.x());
         int v_leftcam = int(depth2left_uv.y());
-        if (u_leftcam < 0 || v_leftcam < 0 || v_leftcam > camera_rgb->imageHeight()|| u_leftcam > camera_rgb->imageWidth())
+        if (u_leftcam < 0 || v_leftcam < 0 || v_leftcam > camera_rgb->imageHeight() || u_leftcam > camera_rgb->imageWidth())
           continue;
 
         cvDepthProjectLeftCam.at<uint16_t>(v_leftcam, u_leftcam) = depth_range.at<uint16_t>(i, j);
@@ -168,7 +217,8 @@ public:
     cv_ros.encoding = "mono16";
     cv_ros.image = cvDepthProjectLeftCam;
     depth_pub_.publish(cv_ros);
-#if opencv_viewer
+
+#if 0
     Eigen::Matrix4d Twc_mono;
     std::vector<cv::Point3f> x3Dw_mono;
     std::vector<cv::Point2f> uv_2d_distorted_mono;
@@ -176,8 +226,8 @@ public:
     std::vector<cv::Point2f> reproj_mono;
     bool isCalOk;
     isCalOk = rgbd_calibration::calcCamPoseRGBD(frame_index, mono_img, camera_rgb, Twc_mono, x3Dw_mono, uv_2d_distorted_mono, id_landmark_mono);
-    if(isCalOk == false)
-     return;
+    if (isCalOk == false)
+      return;
 
     cv::Mat debug_img = mono_img.clone();
     cv::cvtColor(debug_img, debug_img, CV_GRAY2BGR);
@@ -185,10 +235,10 @@ public:
     Sophus::SE3d Twc_mono_soph;
     if (x3Dw_mono.size() == rgbd_calibration::row * rgbd_calibration::col)
     {
-        Eigen::Matrix3d roatation_matrix = Twc_mono.block(0, 0, 3, 3).matrix();
-        Eigen::Quaterniond qwc(roatation_matrix);
-        Twc_mono_soph.translation()= Twc_mono.block(0, 3, 3, 1);
-        Twc_mono_soph.setQuaternion(qwc);
+      Eigen::Matrix3d roatation_matrix = Twc_mono.block(0, 0, 3, 3).matrix();
+      Eigen::Quaterniond qwc(roatation_matrix);
+      Twc_mono_soph.translation() = Twc_mono.block(0, 3, 3, 1);
+      Twc_mono_soph.setQuaternion(qwc);
 
       //Project Xw to "stereo Left image" to check instrinsic value
       for (int k = 0; k < x3Dw_mono.size(); k++)
@@ -197,24 +247,24 @@ public:
         Eigen::Vector2d tmp_reproj;
         camera_rgb->spaceToPlane(x3c_mono, tmp_reproj);
         reproj_mono.push_back(cv::Point2f(tmp_reproj.x(), tmp_reproj.y()));
-        cv::circle(debug_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(255,0,0), 2);
-        cv::circle(debug_img, uv_2d_distorted_mono[k], 2, cv::Scalar(0,0,255), 0);
+        cv::circle(debug_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(255, 0, 0), 2);
+        cv::circle(debug_img, uv_2d_distorted_mono[k], 2, cv::Scalar(0, 0, 255), 0);
       }
     }
-    cv::imshow("rgb_instrinsic", debug_img);
+    // cv::imshow("rgb_instrinsic", debug_img);
 #endif
 
 #if opencv_viewer
-   //Project Xw to "Confidence image" to check instrinsic value
+    //Project Xw to "Confidence image" to check instrinsic value
     Eigen::Matrix4d Twc_depth;
     std::vector<cv::Point3f> x3Dw_depth;
     std::vector<cv::Point2f> uv_2d_distorted_depth;
     std::vector<int> id_landmark_depth;
     std::vector<cv::Point2f> reproj_depth;
-    isCalOk = rgbd_calibration::calcCamPoseRGBD(frame_index, depth_img, camera_depth, Twc_depth, x3Dw_depth, uv_2d_distorted_depth, id_landmark_depth);
+    bool isCalOk = rgbd_calibration::calcCamPoseRGBD(frame_index, depth_img, camera_depth, Twc_depth, x3Dw_depth, uv_2d_distorted_depth, id_landmark_depth);
     if (isCalOk == false)
       return;
-      
+
     cv::Mat debug_depth_img = depth_img.clone();
     cv::cvtColor(debug_depth_img, debug_depth_img, CV_GRAY2BGR);
     Sophus::SE3d Twc_depth_soph;
@@ -232,11 +282,19 @@ public:
         Eigen::Vector2d tmp_reproj;
         camera_depth->spaceToPlane(x3c_depth, tmp_reproj);
         reproj_depth.push_back(cv::Point2f(tmp_reproj.x(), tmp_reproj.y()));
+        if (tmp_reproj.x() < 0 || tmp_reproj.y() < 0 || tmp_reproj.x() > debug_depth_img.cols || tmp_reproj.y() > debug_depth_img.rows)
+          continue;
+
         cv::circle(debug_depth_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(255, 0, 0), 2);
-        cv::circle(debug_depth_img, uv_2d_distorted_depth[k], 4, cv::Scalar(0,0,255), 0);
+        cv::circle(debug_depth_img, uv_2d_distorted_depth[k], 4, cv::Scalar(0, 0, 255), 0);
       }
     }
-    cv::imshow("depth_instrinsic", debug_depth_img);
+    // cv::imshow("depth_instrinsic", debug_depth_img);
+
+   double rgb_fx =  269.3954642460685;
+   double rgb_fy =  269.80331670442996;
+   double rgb_cx =  339.7385948862712;
+   double rgb_cy =  195.15237910597025;
 
     //Project Xw from "Confidence image" to "stereo Left image" to check extrinsic
     cv::Mat ext_debug_img = mono_img.clone();
@@ -245,24 +303,37 @@ public:
     {
       for (int k = 0; k < x3Dw_depth.size(); k++)
       {
-        Eigen::Vector3d x3c_img = Tdepth_rgb.inverse() *  Twc_depth_soph.inverse() * Eigen::Vector3d(x3Dw_depth[k].x, x3Dw_depth[k].y, x3Dw_depth[k].z);
+        Eigen::Vector3d x3c_img = Tdepth_rgb.inverse() * Twc_depth_soph.inverse() * Eigen::Vector3d(x3Dw_depth[k].x, x3Dw_depth[k].y, x3Dw_depth[k].z);
         Eigen::Vector2d tmp_reproj;
-        camera_rgb->spaceToPlane(x3c_img, tmp_reproj);
-        // reproj_depth.push_back(cv::Point2f(tmp_reproj.x(), tmp_reproj.y()));
-        cv::circle(ext_debug_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(0,255,0), 0);
+        tmp_reproj.x() = rgb_fx  * (x3c_img.x() / x3c_img.z()) + rgb_cx;
+        tmp_reproj.y() = rgb_fy  * (x3c_img.y() / x3c_img.z()) + rgb_cy;
+        // camera_rgb->spaceToPlane(x3c_img, tmp_reproj);
+        if (tmp_reproj.x() < 0 || tmp_reproj.y() < 0 || tmp_reproj.x() > ext_debug_img.cols || tmp_reproj.y() > ext_debug_img.rows)
+          continue;
+        cv::circle(ext_debug_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(0, 255, 0), 0);
       }
     }
-    cv::imshow("prej_ext_debug_img", ext_debug_img);
-    cv::waitKey(2);
+    cv_bridge::CvImage cv_ros_reproj;
+    cv_ros_reproj.header = img_msg->header;
+    cv_ros_reproj.header.frame_id = "map";
+    cv_ros_reproj.header.seq = 0;
+    //cv_ros.header.stamp = img_msg->header; //microseconds->seconds
+    cv_ros_reproj.encoding = "bgr8";
+    cv_ros_reproj.image = ext_debug_img;
+    reproj_pub_.publish(cv_ros_reproj);
+
+    // cv::imshow("prej_ext_debug_img", ext_debug_img);
+    // cv::waitKey(1);
 #endif
 
+#endif
     frame_index++;
   }
 
 private:
   //threading init
   // std::unique_ptr<ThreadPool> threading_pool_opt;
-  ros::Publisher depth_pub_;
+  ros::Publisher depth_pub_, reproj_pub_, sync_stereoL_pub_, sync_tof_mono_pub;
   CameraPtr camera_rgb, camera_depth;
   Sophus::SE3d Tdepth_rgb;
   RGBD_CALIBRATIONPtr rgbd_calibr;

@@ -1,25 +1,25 @@
 <launch>
 
-<param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/fusion_ti.yaml" type="string"/>
-<param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/fusion_zed.yaml" type="string"/>  
+<param name="/calibration/config_file_depth" value="/alignStereoTof/src/camOdoCalib/config/fusion_azure.yaml" type="string"/>
+<param name="/calibration/config_file_rgb" value="/alignStereoTof/src/camOdoCalib/config/fusion_zed.yaml" type="string"/>  
 
 
 <!-- <param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_depth.yaml" type="string"/>
 <param name="/calibration/config_file_rgb" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_rgb.yaml" type="string"/> -->
 
 <!-- initial extrinsic param Tdepth_rgb, pose from rgb cam to depth cam -->
-<param name="/Tdepth_rgb/tx" value="-0.0473584" type="double"/>
-<param name="/Tdepth_rgb/ty" value="0.0544932" type="double"/>
-<param name="/Tdepth_rgb/tz" value="-0.0187574" type="double"/>
-<param name="/Tdepth_rgb/qx" value="0.0141265" type="double"/>
-<param name="/Tdepth_rgb/qy" value="0.02082" type="double"/>
-<param name="/Tdepth_rgb/qz" value="0.002037" type="double"/>
-<param name="/Tdepth_rgb/qw" value="0.999681" type="double"/>
+<param name="/Tdepth_rgb/tx" value="0.02293823955529838" type="double"/>
+<param name="/Tdepth_rgb/ty" value="-0.01037096900370285" type="double"/>
+<param name="/Tdepth_rgb/tz" value="-0.0009723014067206465" type="double"/>
+<param name="/Tdepth_rgb/qx" value="-0.00952707" type="double"/>
+<param name="/Tdepth_rgb/qy" value="-0.0027869" type="double"/>
+<param name="/Tdepth_rgb/qz" value="0.0039028" type="double"/>
+<param name="/Tdepth_rgb/qw" value="0.9999704" type="double"/>
 
 <node pkg="cam_calibration" type="rgbd_chess_check_node" name="rgbd_chess_check" output="screen">
     <remap from="cam0/image_raw" to="/zed2/zed_node/left/image_rect_color"/>
-    <remap from="camera/depth/image" to="/vi_processed_depth_img"/> 
-    <remap from="camera/confindence/image" to="/vi_confidence_img"/>
+    <remap from="camera/depth/image" to="/depth_to_rgb/image_raw"/> 
+    <remap from="camera/confindence/image" to="/rgb/image_raw"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/>
