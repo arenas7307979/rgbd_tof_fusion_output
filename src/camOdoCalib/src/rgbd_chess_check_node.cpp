@@ -78,7 +78,7 @@ public:
     Tdepth_rgb.translation().y() = y;
     Tdepth_rgb.translation().z() = z;
     Tdepth_rgb.setQuaternion(Eigen::Quaterniond(qw, qx, qy, qz));
-    Tdepth_rgb = Tdepth_rgb.inverse();
+    // Tdepth_rgb = Tdepth_rgb.inverse();
     // std::cout << "Tdepth_rgb translation: " << Tdepth_rgb.translation() << std::endl;
     // std::cout << "Tdepth_unit_quaternion: " << Tdepth_rgb.so3().unit_quaternion().coeffs() << std::endl;
     // Tdepth_rgb = Tdepth_rgb.inverse();
