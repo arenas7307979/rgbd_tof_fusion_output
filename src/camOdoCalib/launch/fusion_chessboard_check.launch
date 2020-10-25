@@ -2,6 +2,7 @@
 
 <param name="/calibration/config_file_depth" value="/alignStereoTof/src/camOdoCalib/config/fusion_azure.yaml" type="string"/>
 <param name="/calibration/config_file_rgb" value="/alignStereoTof/src/camOdoCalib/config/fusion_zed.yaml" type="string"/>  
+<param name="/calibration/save_folder" value="$(find cam_calibration)/image_dataset/" type="string"/>  
 
 
 <!-- <param name="/calibration/config_file_depth" value="/datasets/rgbd_calibration_onlydepth/src/camOdoCalib/config/d435i_depth.yaml" type="string"/>
@@ -18,8 +19,13 @@
 
 <node pkg="cam_calibration" type="rgbd_chess_check_node" name="rgbd_chess_check" output="screen">
     <remap from="cam0/image_raw" to="/zed2/zed_node/left/image_rect_color"/>
+    <remap from="cam1/image_raw" to="/zed2/zed_node/right/image_rect_color"/> 
+    <!-- tof depth -->
     <remap from="camera/depth/image" to="/depth_to_rgb/image_raw"/> 
+    <!-- tof color image -->
     <remap from="camera/confindence/image" to="/rgb/image_raw"/>
+    <!-- stereo depth -->
+    <remap from="stereo/camera_stereo_depth" to="/zed2/zed_node/depth/depth_registered"/>
 </node>
 
 <node pkg="rviz" type="rviz" name="rviz" output="screen" args="-d $(find cam_calibration)/rviz/vins_rgbd.rviz"/>

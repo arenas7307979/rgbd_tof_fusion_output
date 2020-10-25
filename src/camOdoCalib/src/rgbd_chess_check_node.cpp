@@ -22,10 +22,13 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <fstream>
+#include <sstream>
+#include <boost/filesystem.hpp>
 
 #include "rgbd_calibration.h"
 // #include "two_image_calibration.h"
-#define opencv_viewer 1
+#define opencv_viewer 0
 #define NotOny_Publish_Color 1
 
 template <class T>
@@ -41,12 +44,14 @@ void GetParam(const std::string &param_name, T &param)
 class RGBDCheckerNode
 {
 public:
+
   RGBDCheckerNode(ros::NodeHandle &pr_nh)
   {
-    depth_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/tof_to_left", 1);
-    reproj_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/reproj_debug", 1);
+    reproj_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/reproj_debug", 1); //debug for extrinsic param
+    sync_tof_depth_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/tof_to_left", 1); //depth of tof to left cam 
     sync_stereoL_pub_ = pr_nh.advertise<sensor_msgs::Image>("/project/sync_left_gray_img", 1);
     sync_tof_mono_pub = pr_nh.advertise<sensor_msgs::Image>("/project/sync_tof_gray_img", 1);
+    
 
     std::string config_file_depth, config_file_rgb;
     GetParam("/calibration/config_file_depth", config_file_depth);
@@ -78,31 +83,62 @@ public:
     Tdepth_rgb.translation().y() = y;
     Tdepth_rgb.translation().z() = z;
     Tdepth_rgb.setQuaternion(Eigen::Quaterniond(qw, qx, qy, qz));
-    // Tdepth_rgb = Tdepth_rgb.inverse();
-    // std::cout << "Tdepth_rgb translation: " << Tdepth_rgb.translation() << std::endl;
-    // std::cout << "Tdepth_unit_quaternion: " << Tdepth_rgb.so3().unit_quaternion().coeffs() << std::endl;
-    // Tdepth_rgb = Tdepth_rgb.inverse();
-    // std::cout << "Tdepth_rgb= " << Tdepth_rgb.translation() <<std::endl;
-    // std::cout << "Tdepth_rgb= " << Tdepth_rgb.unit_quaternion().coeffs() <<std::endl;
-    //Note!!!
-    //校正板參數在calcCamPose.cpp修改
-    //Calibration board parameters are modified in calcCamPose.cpp.
-    rgbd_calibr = std::make_shared<RGBD_CALIBRATION>(camera_depth, camera_rgb, Tdepth_rgb);
+
+    GetParam("/calibration/save_folder", save_folder_path);
+    std::cout << "save_folder_path=" << save_folder_path << std::endl;
+
+    boost::filesystem::path dir(save_folder_path);
+    boost::filesystem::create_directories(dir);
+    tof_folder = save_folder_path + "/tof_To_stereo_cam";
+    boost::filesystem::path dir1(tof_folder);
+    boost::filesystem::create_directories(dir1);
+    stereo_left_folder = save_folder_path + "/stereo_left_cam";
+    boost::filesystem::path dir2(stereo_left_folder);
+    boost::filesystem::create_directories(dir2);
+    stereo_right_folder = save_folder_path + "/stereo_right_cam";
+    boost::filesystem::path dir3(stereo_right_folder);
+    boost::filesystem::create_directories(dir3);
+    stereo_depth_folder = save_folder_path + "/stereo_depth_cam";
+    boost::filesystem::path dir4(stereo_depth_folder);
+    boost::filesystem::create_directories(dir4);
   }
+
   ~RGBDCheckerNode() {}
+
+  void StereoDepthCallback(const sensor_msgs::ImageConstPtr &depth_msg)
+  {
+    cv::Mat depth_range;
+    double depth_scalin_factor = 1000.0;
+    double inv_depth_scalin_factor = 1.0 / depth_scalin_factor;
+    cv_bridge::CvImagePtr depth_range_Ptr;
+    depth_range_Ptr = cv_bridge::toCvCopy(depth_msg, depth_msg->encoding);
+    if (depth_range_Ptr->encoding == sensor_msgs::image_encodings::TYPE_32FC1)
+    {
+      (depth_range_Ptr->image).convertTo(depth_range_Ptr->image, CV_16UC1, depth_scalin_factor);
+    }
+    depth_range_Ptr->image.copyTo(depth_range);
+    std::ostringstream oss;
+    oss << depth_msg->header.stamp.toNSec();
+    std::string intAsString(oss.str());
+    std::string image_name = stereo_depth_folder + "/" + intAsString + ".png";
+    cv::imwrite(image_name, depth_range);
+  }
 
   //img_msg color image(stereo left)
   // depth_msg is confidence image
   // depth_range_msg is depth inforamtion.
   void ImageDepthImgCallback(const sensor_msgs::ImageConstPtr &img_msg,
+                             const sensor_msgs::ImageConstPtr &img_r_msg,
                              const sensor_msgs::ImageConstPtr &depth_msg,
                              const sensor_msgs::ImageConstPtr &depth_range_msg)
   {
-    if (img_msg == nullptr || depth_msg == nullptr || depth_range_msg == nullptr)
+    if (img_msg == nullptr || depth_msg == nullptr || depth_range_msg == nullptr || img_r_msg == nullptr)
       return;
 
-    cv::Mat mono_img, depth_img;
+    cv::Mat mono_img, depth_img, mono_right_img;
     double timestamp = img_msg->header.stamp.toSec();
+
+    //---------------CONVERT STEREO LEFT IMG TYPE
     if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
         img_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
         img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
@@ -125,14 +161,47 @@ public:
       //gray image
       mono_img = cv_bridge::toCvShare(img_msg, "mono8")->image;
     }
+    else
+    {
+      std::cout << "error type" << std::endl;
+    }
 
-    if (img_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
-        img_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
-        img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+    //---------------CONVERT STEREO RIGHT IMG TYPE
+    if (img_r_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
+        img_r_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
+        img_r_msg->encoding == sensor_msgs::image_encodings::BGRA8)
     {
       //rgb image
       cv::Mat rgb_img;
-      if (img_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+      if (img_r_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+      {
+        rgb_img = cv_bridge::toCvShare(img_r_msg, "bgra8")->image;
+        cv::cvtColor(rgb_img, mono_right_img, CV_BGRA2GRAY);
+      }
+      else
+      {
+        rgb_img = cv_bridge::toCvShare(img_r_msg, "bgr8")->image;
+        cv::cvtColor(rgb_img, mono_right_img, CV_BGR2GRAY);
+      }
+    }
+    else if (img_r_msg->encoding == sensor_msgs::image_encodings::MONO8 || img_r_msg->encoding == sensor_msgs::image_encodings::TYPE_8UC1)
+    {
+      //gray image
+      mono_right_img = cv_bridge::toCvShare(img_r_msg, "mono8")->image;
+    }
+    else
+    {
+      std::cout << "error type" << std::endl;
+    }
+
+    //---------------CONVERT DEPTH (COLOR) IMG TYPE
+    if (depth_msg->encoding == sensor_msgs::image_encodings::BGR8 ||
+        depth_msg->encoding == sensor_msgs::image_encodings::RGB8 ||
+        depth_msg->encoding == sensor_msgs::image_encodings::BGRA8)
+    {
+      //rgb image
+      cv::Mat rgb_img;
+      if (depth_msg->encoding == sensor_msgs::image_encodings::BGRA8)
       {
         rgb_img = cv_bridge::toCvShare(depth_msg, "bgra8")->image;
         cv::cvtColor(rgb_img, depth_img, CV_BGRA2GRAY);
@@ -147,6 +216,10 @@ public:
     {
       //gray image
       depth_img = cv_bridge::toCvShare(depth_msg, "mono8")->image;
+    }
+    else
+    {
+      std::cout << "error type" << std::endl;
     }
 
     cv_bridge::CvImage cv_ros_stereo_gray;
@@ -199,7 +272,9 @@ public:
 
         //reproject to stereo left-cam
         Eigen::Vector2d depth2left_uv;
-        camera_rgb->spaceToPlane(x3c_left, depth2left_uv);
+        depth2left_uv.x() = rgb_param[0] * (x3c_left.x() / x3c_left.z()) + rgb_param[2];
+        depth2left_uv.y() = rgb_param[1] * (x3c_left.y() / x3c_left.z()) + rgb_param[3];
+        // camera_rgb->spaceToPlane(x3c_left, depth2left_uv);
         int u_leftcam = int(depth2left_uv.x());
         int v_leftcam = int(depth2left_uv.y());
         if (u_leftcam < 0 || v_leftcam < 0 || v_leftcam > camera_rgb->imageHeight() || u_leftcam > camera_rgb->imageWidth())
@@ -208,6 +283,21 @@ public:
         cvDepthProjectLeftCam.at<uint16_t>(v_leftcam, u_leftcam) = depth_range.at<uint16_t>(i, j);
       }
     }
+    //imwrite tof-to-stereo-left image (uint16)
+    std::ostringstream oss;
+    oss << depth_msg->header.stamp.toNSec();
+    std::string intAsString(oss.str());
+    std::string image_tof_left_name = tof_folder + "/" + intAsString + ".png";
+    cv::imwrite(image_tof_left_name, cvDepthProjectLeftCam);
+
+    //imwrite stereo-left image
+    std::string image_l_name = stereo_left_folder + "/" + intAsString + ".png";
+    cv::imwrite(image_l_name, mono_img);
+
+    //imwrite stereo-right image
+    std::string image_r_name = stereo_right_folder + "/" + intAsString + ".png";
+    cv::imwrite(image_r_name, mono_right_img);
+
 
     cv_bridge::CvImage cv_ros;
     cv_ros.header = img_msg->header;
@@ -216,7 +306,9 @@ public:
     //cv_ros.header.stamp = img_msg->header; //microseconds->seconds
     cv_ros.encoding = "mono16";
     cv_ros.image = cvDepthProjectLeftCam;
-    depth_pub_.publish(cv_ros);
+    sync_tof_depth_pub_.publish(cv_ros);
+
+
 
 #if 0
     Eigen::Matrix4d Twc_mono;
@@ -290,12 +382,6 @@ public:
       }
     }
     // cv::imshow("depth_instrinsic", debug_depth_img);
-
-   double rgb_fx =  269.3954642460685;
-   double rgb_fy =  269.80331670442996;
-   double rgb_cx =  339.7385948862712;
-   double rgb_cy =  195.15237910597025;
-
     //Project Xw from "Confidence image" to "stereo Left image" to check extrinsic
     cv::Mat ext_debug_img = mono_img.clone();
     cv::cvtColor(ext_debug_img, ext_debug_img, CV_GRAY2BGR);
@@ -305,9 +391,9 @@ public:
       {
         Eigen::Vector3d x3c_img = Tdepth_rgb.inverse() * Twc_depth_soph.inverse() * Eigen::Vector3d(x3Dw_depth[k].x, x3Dw_depth[k].y, x3Dw_depth[k].z);
         Eigen::Vector2d tmp_reproj;
-        tmp_reproj.x() = rgb_fx  * (x3c_img.x() / x3c_img.z()) + rgb_cx;
-        tmp_reproj.y() = rgb_fy  * (x3c_img.y() / x3c_img.z()) + rgb_cy;
-        // camera_rgb->spaceToPlane(x3c_img, tmp_reproj);
+        // tmp_reproj.x() = rgb_fx  * (x3c_img.x() / x3c_img.z()) + rgb_cx;
+        // tmp_reproj.y() = rgb_fy  * (x3c_img.y() / x3c_img.z()) + rgb_cy;
+        camera_rgb->spaceToPlane(x3c_img, tmp_reproj);
         if (tmp_reproj.x() < 0 || tmp_reproj.y() < 0 || tmp_reproj.x() > ext_debug_img.cols || tmp_reproj.y() > ext_debug_img.rows)
           continue;
         cv::circle(ext_debug_img, cv::Point2f(tmp_reproj.x(), tmp_reproj.y()), 2, cv::Scalar(0, 255, 0), 0);
@@ -333,7 +419,7 @@ public:
 private:
   //threading init
   // std::unique_ptr<ThreadPool> threading_pool_opt;
-  ros::Publisher depth_pub_, reproj_pub_, sync_stereoL_pub_, sync_tof_mono_pub;
+  ros::Publisher sync_tof_depth_pub_, reproj_pub_, sync_stereoL_pub_, sync_tof_mono_pub, sync_stereo_depth_;
   CameraPtr camera_rgb, camera_depth;
   Sophus::SE3d Tdepth_rgb;
   RGBD_CALIBRATIONPtr rgbd_calibr;
@@ -341,6 +427,7 @@ private:
   int tmp_data_size = 0;
   double obs_frame_count = 0;
   std::vector<double> depthparam, rgb_param;
+  std::string save_folder_path, tof_folder, stereo_left_folder, stereo_right_folder, stereo_depth_folder;
 };
 
 int main(int argc, char **argv)
@@ -350,18 +437,16 @@ int main(int argc, char **argv)
   ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
   RGBDCheckerNode rgbd_node(n);
-  message_filters::Subscriber<sensor_msgs::Image> sub_img(n, "cam0/image_raw", 100),
-      sub_confidence_img(n, "camera/confindence/image", 100),
-      sub_depth_img(n, "camera/depth/image", 100);
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
-  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(10000), sub_img, sub_confidence_img, sub_depth_img);
-  sync.registerCallback(boost::bind(&RGBDCheckerNode::ImageDepthImgCallback, &rgbd_node, _1, _2, _3));
 
-  //the following three rows are to run the calibrating project through playing bag package
-  // ros::Subscriber sub_imu = n.subscribe(WHEEL_TOPIC, 500, wheel_callback, ros::TransportHints().tcpNoDelay());
-  // ros::Subscriber sub_img = n.subscribe(IMAGE_RGB_TOPIC, 200, image_callback);
-  // std::thread calc_thread = std::thread(&RGBDCheckerNode::calc_process, &rgbd_node);
+  ros::Subscriber sub_stereo_depth = n.subscribe("stereo/camera_stereo_depth", 10, &RGBDCheckerNode::StereoDepthCallback, &rgbd_node, ros::TransportHints().tcpNoDelay());
 
+  message_filters::Subscriber<sensor_msgs::Image> sub_img_left(n, "cam0/image_raw", 10),
+                                                  sub_right_img(n, "cam1/image_raw", 10),
+                                                  sub_confidence_img(n, "camera/confindence/image", 10),
+                                                  sub_depth_img(n, "camera/depth/image", 10);
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image, sensor_msgs::Image> syncPolicy;
+  message_filters::Synchronizer<syncPolicy> sync(syncPolicy(10000), sub_img_left, sub_right_img, sub_confidence_img, sub_depth_img);
+  sync.registerCallback(boost::bind(&RGBDCheckerNode::ImageDepthImgCallback, &rgbd_node, _1, _2, _3, _4));
   ros::spin();
   return 0;
 }
