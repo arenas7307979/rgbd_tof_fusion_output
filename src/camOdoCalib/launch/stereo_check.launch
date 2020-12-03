@@ -1,7 +1,7 @@
 <launch>
 
-<param name="/calibration/config_file_rgb_l" value="/datasets/rgbd_tof_fusion_output/src/camOdoCalib/config/vicore_f35_l.yaml" type="string"/>
-<param name="/calibration/config_file_rgb_r" value="/datasets/rgbd_tof_fusion_output/src/camOdoCalib/config/vicore_f35_r.yaml" type="string"/>  
+<param name="/calibration/config_file_rgb_l" value="/rgbd_tof_fusion_output/src/camOdoCalib/config/vicore_f35_l.yaml" type="string"/>
+<param name="/calibration/config_file_rgb_r" value="/rgbd_tof_fusion_output/src/camOdoCalib/config/vicore_f35_r.yaml" type="string"/>  
 
 <!-- initial extrinsic param Tdepth_rgb, pose from rgb cam to depth cam -->
 <!-- <param name="/Tdepth_rgb/tx" value="-0.0473584" type="double"/>

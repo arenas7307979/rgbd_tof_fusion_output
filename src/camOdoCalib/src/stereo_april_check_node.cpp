@@ -96,7 +96,7 @@ public:
       std::cout << "one of msg is null" << std::endl;
       return;
     }
-
+std::cout << "callback1111" << std::endl;
     cv::Mat mono_l_img, mono_r_img, depth_img;
     // double timestamp = img_l_msg->header.stamp.toSec();
     if (img_l_msg->encoding == sensor_msgs::image_encodings::BGR8 || 
@@ -113,7 +113,7 @@ public:
       //gray image
       mono_l_img = cv_bridge::toCvShare(img_l_msg, "mono8")->image;
     }
-    
+    #if 0
     if (img_r_msg->encoding == sensor_msgs::image_encodings::BGR8 || 
     img_r_msg->encoding == sensor_msgs::image_encodings::RGB8 || 
     img_r_msg->encoding == sensor_msgs::image_encodings::BGRA8)
@@ -128,7 +128,8 @@ public:
       //gray image
       mono_r_img = cv_bridge::toCvShare(img_r_msg, "mono8")->image;
     }
-    
+    #endif
+    #if 0 // FIXME
     //convert depth inforamation
     cv::Mat depth_range;
     double depth_scalin_factor = 1000.0;
@@ -163,6 +164,7 @@ public:
         cvDepthProjectLeftCam.at<uint16_t>(v_leftcam, u_leftcam) = depth_range.at<uint16_t>(i, j);
       }
     }
+    #endif
 #if 0
     cv_bridge::CvImage cv_ros;
     cv_ros.header = img_l_msg->header;
@@ -172,6 +174,7 @@ public:
     cv_ros.image = cvDepthProjectLeftCam;
     depth_pub_.publish(cv_ros);
 #endif
+std::cout << "callback44444" << std::endl;
     /* left image */
     Eigen::Matrix4d Twc_mono;
     std::vector<cv::Point3f> x3Dw_mono;
@@ -188,7 +191,7 @@ public:
 
     cv::Mat debug_img = mono_l_img.clone();
     cv::cvtColor(debug_img, debug_img, CV_GRAY2BGR);
-
+std::cout << "callback55555" << std::endl;
     Sophus::SE3d Twc_mono_soph;    
     if (uv_2d_distorted_mono.size() > 20) {
         Eigen::Matrix3d roatation_matrix = Twc_mono.block(0, 0, 3, 3).matrix();
