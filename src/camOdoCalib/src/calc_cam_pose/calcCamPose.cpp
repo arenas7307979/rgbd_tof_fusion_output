@@ -53,7 +53,7 @@ void FindTargetCorner(cv::Mat &img_raw, const PatternType &pt,
   {
     //const int april_rows = 6;
     const int april_cols = 6;
-    const double tag_sz = 0.088;
+    const double tag_sz = 0.055;
     const double tag_spacing_sz = 0.3; // 0.055 + 0.0165
 
     AprilTags::TagCodes tagCodes(AprilTags::tagCodes36h11);
@@ -300,4 +300,52 @@ bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
     return false;
   }
 }
+
+bool calcCamPoseApril(const double &timestamps, const cv::Mat &image,
+                 const CameraPtr &cam, Eigen::Matrix4d &Twc, std::vector<cv::Point3f> &x3Dw,
+                     std::vector<cv::Point2f> &uv_2d_distorted, std::vector<int> &id_landmark)
+{
+  cv::Mat img_raw = image.clone();
+  if (img_raw.channels() == 3)
+  {
+    cv::cvtColor(img_raw, img_raw, CV_BGR2GRAY);
+  }
+
+  std::vector<cv::Point3f> p3ds;
+  std::vector<cv::Point2f> p2ds;
+
+  FindTargetCorner(img_raw, APRIL, p3ds, p2ds, id_landmark);
+  x3Dw = p3ds;
+  uv_2d_distorted = p2ds;
+  // std::cout << "p3ds.size()=" << p3ds.size() << std::endl;
+  // for (int kk = 0; kk < p3ds.size(); kk++)
+  // {
+  //   std::cout << "p2ds size: " << p2ds[kk] << std::endl;
+  //   std::cout << "p3ds size: " << p3ds[kk] << std::endl;
+  // }
+  std::vector<double> p = cam->getK();
+  // std::cout << p[0] << " " << p[1] << " " << p[2] << " " << p[3] << std::endl;
+  std::vector<cv::Point2f> un_pts;
+  for (int i = 0, iend = (int)p2ds.size(); i < iend; ++i)
+  {
+    Eigen::Vector2d a(p2ds[i].x, p2ds[i].y);
+    Eigen::Vector3d b;
+    cam->liftProjective(a, b);
+    un_pts.push_back(cv::Point2f(p[0] * b.x() / b.z() + p[2], p[1] * b.y() / b.z() + p[3]));
+    // std::cout << "p2ds: " << p2ds[i] << std::endl;
+    // std::cout << "un_pts: " << un_pts[i] << std::endl;
+  }
+
+  if (EstimatePose(p3ds, un_pts, p[0], p[2], p[1], p[3], Twc, img_raw, cam))
+  {
+    cv::imshow("apriltag_detection & camPose_calculation", img_raw);
+    cv::waitKey(1);
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
 } // namespace

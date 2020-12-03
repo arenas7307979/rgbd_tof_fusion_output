@@ -39,4 +39,8 @@ bool calcCamPose(const double &timestamps, const cv::Mat &image,
 bool calcCamPoseRGBD(const double &timestamps, const cv::Mat &image,
                      const CameraPtr &cam, Eigen::Matrix4d &Twc, std::vector<cv::Point3f> &x3Dw,
                      std::vector<cv::Point2f> &uv_2d_distorted, std::vector<int> &id_landmark);
+
+bool calcCamPoseApril(const double &timestamps, const cv::Mat &image,
+                     const CameraPtr &cam, Eigen::Matrix4d &Twc, std::vector<cv::Point3f> &x3Dw,
+                     std::vector<cv::Point2f> &uv_2d_distorted, std::vector<int> &id_landmark);
 } // namespace rgbd_calibration

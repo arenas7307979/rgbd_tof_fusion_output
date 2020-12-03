@@ -108,8 +108,11 @@ target_link_libraries(calc_lib ${catkin_LIBRARIES} ${Boost_LIBRARIES} ${OpenCV_L
 #add_executable(rgbd_calibration_node src/main_rgbd_calibration_node.cpp )
 #target_link_libraries(rgbd_calibration_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
 
-add_executable(rgbd_chess_check_node src/rgbd_chess_check_node.cpp )
-target_link_libraries(rgbd_chess_check_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
+#add_executable(rgbd_chess_check_node src/rgbd_chess_check_node.cpp )
+#target_link_libraries(rgbd_chess_check_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
+
+add_executable(stereo_april_check_node src/stereo_april_check_node.cpp )
+target_link_libraries(stereo_april_check_node calib_lib calc_lib csm_eigen ${CERES_LIBRARIES}) 
 
 #### simulation  ###
 # add_executable(simulate simulateData/main.cpp simulateData/simulateOdoCam.cpp)
